@@ -86,6 +86,9 @@ func TestOneWayTilesNotMerged(t *testing.T) {
 		if !strings.HasSuffix(c.ID, ":oneway") {
 			t.Fatalf("expected :oneway suffix, got %q", c.ID)
 		}
+		if !c.OneWay {
+			t.Fatalf("expected OneWay=true on collider %q", c.ID)
+		}
 	}
 }
 
@@ -220,5 +223,17 @@ func TestMixedSolidAndOneWay(t *testing.T) {
 	// Should be: 1 merged (2 tiles) + 1 one-way + 1 merged (3 tiles) = 3 colliders.
 	if len(colliders) != 3 {
 		t.Fatalf("expected 3 colliders (2 merged + 1 oneway), got %d", len(colliders))
+	}
+
+	for _, c := range colliders {
+		if strings.HasSuffix(c.ID, ":oneway") {
+			if !c.OneWay {
+				t.Fatalf("expected OneWay=true on one-way collider %q", c.ID)
+			}
+		} else {
+			if c.OneWay {
+				t.Fatalf("expected OneWay=false on solid collider %q", c.ID)
+			}
+		}
 	}
 }

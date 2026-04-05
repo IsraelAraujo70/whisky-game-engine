@@ -20,23 +20,35 @@ This package is intentionally backend-agnostic. The SDL3 platform feeds it every
 
 ## Available control names
 
-The SDL3 platform currently maps these scancodes to control names:
+Control names are defined by `Config.KeyMap` in the `whisky` package. Games map key names to control names of their choice. The default `KeyMap` (used when nil) provides:
 
-| Control | Key |
-|---------|-----|
-| `w` | W |
-| `a` | A |
-| `s` | S |
-| `d` | D |
-| `up` | Arrow Up |
-| `down` | Arrow Down |
-| `left` | Arrow Left |
-| `right` | Arrow Right |
-| `space` | Space |
-| `lshift` | Left Shift |
-| `enter` | Enter/Return |
+| Key name | Default control |
+|----------|----------------|
+| `w` | `w` |
+| `a` | `a` |
+| `s` | `s` |
+| `d` | `d` |
+| `up` | `up` |
+| `down` | `down` |
+| `left` | `left` |
+| `right` | `right` |
+| `space` | `space` |
+| `lshift` | `lshift` |
+| `enter` | `enter` |
 
-> **Remark:** This mapping is hardcoded in `internal/platform/sdl3/runtime.go` and must be made configurable in a future iteration so games can register custom scancode-to-control mappings.
+Games can override this entirely or extend it with custom controls:
+
+```go
+whisky.Config{
+    KeyMap: whisky.KeyMap{
+        "space": "jump",
+        "z":     "attack",
+        "up":    "jump", // remap arrow up to jump too
+    },
+}
+```
+
+Supported key names: letters (`"a"`–`"z"`), digits (`"0"`–`"9"`), arrow keys, named keys (`"space"`, `"enter"`, `"escape"`, `"backspace"`, `"tab"`, `"lshift"`, `"rshift"`, `"lctrl"`, `"rctrl"`, `"lalt"`, `"ralt"`), and function keys (`"f1"`–`"f12"`).
 
 ## Example usage
 

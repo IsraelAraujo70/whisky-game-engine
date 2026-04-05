@@ -73,6 +73,24 @@ func TestWorldRemoveByPrefix(t *testing.T) {
 	}
 }
 
+func TestColliderOneWayField(t *testing.T) {
+	world := NewWorld()
+	world.Add(Collider{
+		ID:     "platform:oneway",
+		Bounds: geom.Rect{X: 0, Y: 32, W: 64, H: 8},
+		Layer:  LayerWorld,
+		Mask:   LayerPlayer,
+		OneWay: true,
+	})
+	hits := world.QueryRect(geom.Rect{X: 0, Y: 30, W: 8, H: 10}, LayerWorld)
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 hit, got %d", len(hits))
+	}
+	if !hits[0].OneWay {
+		t.Fatal("expected OneWay=true on collider returned from QueryRect")
+	}
+}
+
 // [M1] RemoveByPrefix with empty string must be a no-op.
 func TestWorldRemoveByPrefixEmptyStringIsNoop(t *testing.T) {
 	world := NewWorld()

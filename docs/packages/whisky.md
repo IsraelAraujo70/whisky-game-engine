@@ -45,9 +45,21 @@ SDL3's `SetLogicalPresentation` handles the mapping from virtual coordinates (e.
 
 ## Input Pipeline
 
-The SDL3 platform reads the keyboard state every frame via `sdl.GetKeyboardState()` and maps scancodes to engine control names (e.g. `"w"`, `"a"`, `"space"`). Games bind actions to these control names via `ctx.Input.Bind("move_left", "a", "left")`.
+The SDL3 platform reads the keyboard state every frame via `sdl.GetKeyboardState()` and maps scancodes to engine control names. Games bind actions to control names via `ctx.Input.Bind("move_left", "a", "left")`.
 
-> **Remark:** The scancode-to-control mapping is currently a hardcoded table inside `internal/platform/sdl3/runtime.go`. This must be made configurable so that games can define their own key mappings — for example via a `KeyMap` field on `Config` or a `RegisterKey` API.
+The scancode-to-control mapping is defined by `Config.KeyMap` (`whisky.KeyMap`, a `map[string]string`). Keys are human-readable names (e.g. `"w"`, `"space"`, `"f1"`); values are the control names fed into the input system. If `KeyMap` is nil, a built-in default set is used (w/a/s/d, arrows, space, lshift, enter).
+
+```go
+whisky.Run(&game{}, whisky.Config{
+    KeyMap: whisky.KeyMap{
+        "space": "jump",
+        "z":     "attack",
+        "lctrl": "crouch",
+    },
+})
+```
+
+Supported key names: letters (`"a"`–`"z"`), digits (`"0"`–`"9"`), arrow keys (`"up"`, `"down"`, `"left"`, `"right"`), named keys (`"space"`, `"enter"`, `"escape"`, `"backspace"`, `"tab"`, `"lshift"`, `"rshift"`, `"lctrl"`, `"rctrl"`, `"lalt"`, `"ralt"`), and function keys (`"f1"`–`"f12"`). Unknown key names are silently ignored.
 
 ## Rendering
 

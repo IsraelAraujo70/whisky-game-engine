@@ -11,6 +11,9 @@
     "Starter example project: pixel-quest",
     "Unit test coverage for geom, input, scene, physics, and project scaffolding",
     "SDL3 dynamic library loading through go-sdl3",
+    "Configurable keyboard mapping via Config.KeyMap (whisky.KeyMap) — replaces hardcoded keyMap in sdl3 platform layer; default uses semantic control names (move_up, move_down, move_left, move_right, action, sprint, confirm)",
+    "Two-pass UpdateInput for shared controls (reset all → OR pressed) preventing non-deterministic input",
+    "WHISKY_SDL3_PATH env var support for macOS (workaround for SIP stripping DYLD_LIBRARY_PATH)",
     "Main-thread runtime contract in whisky.Run",
     "Window creation and teardown lifecycle",
     "Event polling for window close and Escape key",
@@ -39,15 +42,15 @@
     "SDL3 keyboard state polling fed into input.State via UpdateInput (hardcoded keyMap — see remark below)",
     "WASD and arrow key input bindings for player movement in pixel-quest example",
     "Axis-separated collision response (resolveX / resolveY) against solid tile colliders",
-    "Pixel-quest example now renders tilemap and player with generated PNG sprites plus fallback rectangle drawing"
+    "Pixel-quest example now renders tilemap and player with generated PNG sprites plus fallback rectangle drawing",
+    "physics.Collider.OneWay field for pass-through platforms; set automatically by GenerateColliders",
+    "Config.GravityY: configurable downward acceleration (px/s²), default 0 (backwards-compatible)",
+    "Platformer physics in pixel-quest: gravity accumulation, jump impulse, double jump (jumpsLeft), resolveX/resolveY with one-way platform awareness",
+    "Unit and integration tests for gravity, resolveY (solid/one-way/ceiling), and full tilemap→physics→game pipeline"
   ],
-  "remarks": [
-    "The SDL3 keyboard-to-control mapping (keyMap in internal/platform/sdl3/runtime.go) is currently a hardcoded table of scancodes. This MUST be made configurable so games can define their own scancode-to-control mappings — e.g. via a KeyMap field on Config, a RegisterKey API, or a user-supplied mapping passed to the platform layer. The current fixed table is a bootstrap convenience, not the final design."
-  ],
+  "remarks": [],
   "next": [
-    "Configurable keyboard mapping — replace hardcoded keyMap with user-defined scancode-to-control table",
     "Window resize awareness and virtual-resolution policy",
-    "Gravity and platformer physics (jump, fall, one-way platform pass-through)",
     "Audio asset loading for WAV or OGG",
     "Font or text rendering path beyond debug overlay",
     "Asset cache and invalidation hooks",
