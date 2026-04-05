@@ -45,6 +45,6 @@ Games queue colored rectangles via `ctx.DrawRect(worldRect, color)`. The `Camera
 
 ### Input pipeline
 
-Every frame the SDL3 platform reads `sdl.GetKeyboardState()` and maps a fixed set of scancodes (WASD, arrows, space, shift, enter) to string control names. Games bind actions to these controls via `ctx.Input.Bind()` and query them with `Pressed`, `JustPressed`, or `Axis`.
+Every frame the SDL3 platform reads `sdl.GetKeyboardState()` and maps scancodes to control names using the `Config.KeyMap` provided by the game. Games bind actions to controls via `ctx.Input.Bind()` and query them with `Pressed`, `JustPressed`, or `Axis`.
 
-> **Remark:** The scancode-to-control mapping table (`keyMap`) is hardcoded in the platform layer. This must be replaced with a configurable mechanism (e.g. a `KeyMap` on `Config` or a `RegisterKey` API) so games can define arbitrary key bindings.
+`Config.KeyMap` is a `whisky.KeyMap` (`map[string]string`) where keys are human-readable key names and values are control names. If nil, a built-in default set is used. Unknown key names are silently ignored. The full mapping is resolved once at startup via `buildKeyBindings` in the SDL3 platform layer.

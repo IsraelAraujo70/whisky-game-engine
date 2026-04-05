@@ -11,6 +11,7 @@
     "Starter example project: pixel-quest",
     "Unit test coverage for geom, input, scene, physics, and project scaffolding",
     "SDL3 dynamic library loading through go-sdl3",
+    "Configurable keyboard mapping via Config.KeyMap (whisky.KeyMap) — replaces hardcoded keyMap in sdl3 platform layer",
     "Main-thread runtime contract in whisky.Run",
     "Window creation and teardown lifecycle",
     "Event polling for window close and Escape key",
@@ -35,11 +36,8 @@
     "Axis-separated collision response (resolveX / resolveY) against solid tile colliders",
     "Pixel-quest example now renders tilemap as colored rectangles with player movement and collision"
   ],
-  "remarks": [
-    "The SDL3 keyboard-to-control mapping (keyMap in internal/platform/sdl3/runtime.go) is currently a hardcoded table of scancodes. This MUST be made configurable so games can define their own scancode-to-control mappings — e.g. via a KeyMap field on Config, a RegisterKey API, or a user-supplied mapping passed to the platform layer. The current fixed table is a bootstrap convenience, not the final design."
-  ],
+  "remarks": [],
   "next": [
-    "Configurable keyboard mapping — replace hardcoded keyMap with user-defined scancode-to-control table",
     "Window resize awareness and virtual-resolution policy",
     "Renderer abstraction between runtime and draw pipeline",
     "Texture loading and sprite drawing",

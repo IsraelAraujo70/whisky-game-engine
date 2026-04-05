@@ -31,6 +31,17 @@ func Run() error {
 		PixelPerfect:  true,
 		TargetFPS:     60,
 		StartScene:    scene.New("pixel-quest"),
+		KeyMap: whisky.KeyMap{
+			// Movement — WASD and arrow keys map to the same controls.
+			"w": "w", "up": "up",
+			"a": "a", "left": "left",
+			"s": "s", "down": "down",
+			"d": "d", "right": "right",
+			// Extra controls used by this game.
+			"space":  "space",
+			"lshift": "lshift",
+			"enter":  "enter",
+		},
 	})
 }
 
