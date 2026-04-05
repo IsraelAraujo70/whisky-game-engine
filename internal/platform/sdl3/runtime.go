@@ -1,6 +1,8 @@
 package sdl3
 
 import (
+	"os"
+
 	"github.com/Zyko0/go-sdl3/sdl"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
@@ -80,7 +82,11 @@ type Runtime struct {
 // New creates an SDL3 window and renderer. keyMap maps key names (e.g. "space",
 // "w") to control names used by the input system (e.g. "jump", "move_up").
 func New(title string, width, height int, keyMap map[string]string) (*Runtime, error) {
-	if err := sdl.LoadLibrary(sdl.Path()); err != nil {
+	sdlPath := os.Getenv("WHISKY_SDL3_PATH")
+	if sdlPath == "" {
+		sdlPath = sdl.Path()
+	}
+	if err := sdl.LoadLibrary(sdlPath); err != nil {
 		return nil, err
 	}
 
@@ -118,10 +124,22 @@ func (rt *Runtime) SetLogicalSize(w, h int, pixelPerfect bool) error {
 
 // UpdateInput reads the current keyboard state and feeds it into the input
 // system so that action bindings (Pressed / JustPressed / Axis) work.
+//
+// Two passes are used so that multiple keys sharing the same control name
+// (e.g. "w" and "up" both mapped to "move_up") are OR-ed correctly. A
+// single-pass SetPressed would let the last-processed key overwrite a
+// true value set by an earlier key, producing non-deterministic behavior.
 func (rt *Runtime) UpdateInput(state *input.State) {
 	keys := sdl.GetKeyboardState()
+	// First pass: reset every tracked control to false.
 	for _, kb := range rt.keyBindings {
-		state.SetPressed(kb.control, keys[kb.scancode])
+		state.SetPressed(kb.control, false)
+	}
+	// Second pass: set to true if any bound key is currently pressed.
+	for _, kb := range rt.keyBindings {
+		if keys[kb.scancode] {
+			state.SetPressed(kb.control, true)
+		}
 	}
 }
 
