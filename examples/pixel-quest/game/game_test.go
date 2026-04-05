@@ -7,6 +7,7 @@ import (
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
+	"github.com/IsraelAraujo70/whisky-game-engine/tilemap"
 )
 
 const epsilon = 1e-9
@@ -205,5 +206,126 @@ func TestGroundedResetsJumpsLeft(t *testing.T) {
 
 	if g.jumpsLeft != 2 {
 		t.Fatalf("expected jumpsLeft=2 after landing, got %d", g.jumpsLeft)
+	}
+}
+
+// --- Integration tests: tilemap → GenerateColliders → World → resolveY ---
+// These tests exercise the full pipeline so that changes in geom.Rect.Intersects,
+// physics.World.QueryRect, or tilemap.GenerateColliders are caught here.
+
+func newGameFromTilemap(ts *tilemap.TileSet, m *tilemap.TileMap, startX, startY float64) *pixelQuest {
+	world := physics.NewWorld()
+	tilemap.AddToWorld(m, world, geom.Vec2{}, tilemap.DefaultColliderConfig())
+	player := scene.NewNode("player")
+	player.Position = geom.Vec2{X: startX, Y: startY}
+	return &pixelQuest{world: world, player: player}
+}
+
+func TestIntegration_LandOnSolidTile(t *testing.T) {
+	ts := tilemap.NewTileSet("test", 16, 16, 4)
+	ts.SetProperties(1, tilemap.TileProperties{Solid: true})
+	m := tilemap.New(ts, 10, 10)
+	m.AddLayer("terrain")
+	m.FillRow("terrain", 0, 9, 10, 1) // solid floor at row 9 → Y=144
+
+	// Player just above the floor, falling.
+	// bottom=143, floor top=144. dy=200*(1/60)≈3.33 → bottom crosses 144.
+	g := newGameFromTilemap(ts, m, 8, 127) // bottom=143, floor top=144
+	g.velocity.Y = 200.0
+	prevBottom := g.player.Position.Y + playerH
+	dy := g.velocity.Y * (1.0 / 60.0)
+	g.player.Position.Y += dy
+	g.resolveY(dy, prevBottom)
+
+	if !g.grounded {
+		t.Fatal("expected grounded=true after landing on solid tile floor")
+	}
+	if g.velocity.Y != 0 {
+		t.Fatalf("expected velocity.Y=0, got %.4f", g.velocity.Y)
+	}
+	if g.player.Position.Y+playerH > 144+0.001 {
+		t.Fatalf("player bottom (%.2f) penetrates tile floor at Y=144", g.player.Position.Y+playerH)
+	}
+}
+
+func TestIntegration_OneWayTileBlocksFallFromAbove(t *testing.T) {
+	ts := tilemap.NewTileSet("test", 16, 16, 4)
+	ts.SetProperties(1, tilemap.TileProperties{Solid: true, OneWay: true})
+	m := tilemap.New(ts, 10, 10)
+	m.AddLayer("terrain")
+	m.FillRow("terrain", 0, 5, 5, 1) // one-way row at Y=80
+
+	// Player just above the platform, falling.
+	// bottom=79, platform top=80. dy≈3.33 → bottom crosses 80.
+	g := newGameFromTilemap(ts, m, 8, 63) // bottom=79, platform top=80
+	g.velocity.Y = 200.0
+	prevBottom := g.player.Position.Y + playerH
+	dy := g.velocity.Y * (1.0 / 60.0)
+	g.player.Position.Y += dy
+	g.resolveY(dy, prevBottom)
+
+	if !g.grounded {
+		t.Fatal("expected grounded=true after landing on one-way tile from above")
+	}
+}
+
+func TestIntegration_OneWayTilePassThroughFromBelow(t *testing.T) {
+	ts := tilemap.NewTileSet("test", 16, 16, 4)
+	ts.SetProperties(1, tilemap.TileProperties{Solid: true, OneWay: true})
+	m := tilemap.New(ts, 10, 10)
+	m.AddLayer("terrain")
+	m.FillRow("terrain", 0, 5, 5, 1) // one-way row at Y=80
+
+	// Player below the platform, jumping up through it.
+	g := newGameFromTilemap(ts, m, 8, 90)
+	g.velocity.Y = -200.0
+	prevBottom := g.player.Position.Y + playerH // 106 > 80 — already below
+	dy := g.velocity.Y * (1.0 / 60.0)
+	g.player.Position.Y += dy
+	g.resolveY(dy, prevBottom)
+
+	if g.grounded {
+		t.Fatal("expected grounded=false: player jumping through one-way from below")
+	}
+	if g.velocity.Y != -200.0 {
+		t.Fatalf("expected velocity unchanged, got %.4f", g.velocity.Y)
+	}
+}
+
+func TestIntegration_SolidWallBlocksHorizontal(t *testing.T) {
+	ts := tilemap.NewTileSet("test", 16, 16, 4)
+	ts.SetProperties(1, tilemap.TileProperties{Solid: true})
+	m := tilemap.New(ts, 10, 10)
+	m.AddLayer("terrain")
+	m.FillCol("terrain", 9, 0, 10, 1) // right wall at X=144
+
+	// Player moving right into wall.
+	g := newGameFromTilemap(ts, m, 132, 0) // right edge=140, wall at X=144
+	dx := 8.0
+	g.player.Position.X += dx
+	g.resolveX(dx)
+
+	if g.player.Position.X+playerW > 144+0.001 {
+		t.Fatalf("player right edge (%.2f) penetrates wall at X=144", g.player.Position.X+playerW)
+	}
+}
+
+func TestIntegration_TriggerTileDetected(t *testing.T) {
+	ts := tilemap.NewTileSet("test", 16, 16, 4)
+	ts.SetProperties(1, tilemap.TileProperties{Trigger: true})
+	m := tilemap.New(ts, 10, 10)
+	m.AddLayer("terrain")
+	m.SetTile("terrain", 5, 5, 1) // trigger at tile (5,5) → world X=80,Y=80
+
+	g := newGameFromTilemap(ts, m, 80, 80)
+	pp := g.player.WorldPosition()
+	playerRect := geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}
+	hits := g.world.QueryRect(playerRect, physics.LayerTrigger)
+
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 trigger hit, got %d", len(hits))
+	}
+	if !hits[0].Trigger {
+		t.Fatal("expected Trigger=true on hit collider")
 	}
 }
