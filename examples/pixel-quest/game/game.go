@@ -2,9 +2,14 @@ package game
 
 import (
 	"fmt"
+	"image/png"
+	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
+	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
 	"github.com/IsraelAraujo70/whisky-game-engine/tilemap"
 	whisky "github.com/IsraelAraujo70/whisky-game-engine/whisky"
@@ -20,6 +25,8 @@ type pixelQuest struct {
 	player         *scene.Node
 	world          *physics.World
 	tileMap        *tilemap.TileMap
+	tileSheet      *render.Spritesheet
+	playerSheet    *render.Spritesheet
 	triggerReached bool
 }
 
@@ -62,18 +69,27 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 	m.SetTile("terrain", 18, 10, 3)
 
 	g.tileMap = m
+	if err := g.loadSprites(ctx); err != nil {
+		return err
+	}
 
 	// Attach tilemap to scene via component.
 	levelNode := scene.NewNode("level")
 	levelNode.AddComponent(&tilemap.TileMapComponent{
 		Map:   m,
 		World: g.world,
+		Sheet: g.tileSheet,
 	})
 	ctx.Scene.Root.AddChild(levelNode)
 
 	// --- Player setup ---
 	g.player = scene.NewNode("player")
 	g.player.Position = geom.Vec2{X: 24, Y: 160}
+	g.player.AddComponent(&scene.SpriteComponent{
+		Sheet: g.playerSheet,
+		W:     playerW,
+		H:     playerH,
+	})
 	ctx.Scene.Root.AddChild(g.player)
 
 	// --- Input bindings ---
@@ -108,25 +124,22 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 		ctx.Logf("player reached trigger %s on frame %d", triggers[0].ID, ctx.Frames)
 	}
 
-	// --- Rendering ---
-	vw := float64(ctx.Config.VirtualWidth)
-	vh := float64(ctx.Config.VirtualHeight)
-	cameraRect := ctx.Camera.ViewportRect(vw, vh)
-
-	// Draw tiles as colored rectangles.
-	visible := tilemap.VisibleTiles(g.tileMap, cameraRect, geom.Vec2{})
-	tw, th := g.tileMap.TileSize()
-	for _, t := range visible {
-		ctx.DrawRect(geom.Rect{
-			X: t.WorldPos.X,
-			Y: t.WorldPos.Y,
-			W: float64(tw),
-			H: float64(th),
-		}, tileColor(t.ID))
+	// Fallback rendering path when sprite loading is unavailable.
+	if g.tileSheet == nil {
+		visible := tilemap.VisibleTiles(g.tileMap, ctx.ViewportRect(), geom.Vec2{})
+		tw, th := g.tileMap.TileSize()
+		for _, t := range visible {
+			ctx.DrawRect(geom.Rect{
+				X: t.WorldPos.X,
+				Y: t.WorldPos.Y,
+				W: float64(tw),
+				H: float64(th),
+			}, tileColor(t.ID))
+		}
 	}
-
-	// Draw player on top of tiles.
-	ctx.DrawRect(geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}, geom.RGBA(0.2, 0.8, 0.3, 1))
+	if g.playerSheet == nil {
+		ctx.DrawRect(geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}, geom.RGBA(0.2, 0.8, 0.3, 1))
+	}
 
 	// --- Debug overlay ---
 	status := "walking"
@@ -193,4 +206,66 @@ func tileColor(id tilemap.TileID) geom.Color {
 func (g *pixelQuest) Shutdown(ctx *whisky.Context) error {
 	ctx.Logf("pixel-quest shutdown")
 	return nil
+}
+
+func (g *pixelQuest) loadSprites(ctx *whisky.Context) error {
+	assetsDir, err := pixelQuestAssetsDir()
+	if err != nil {
+		return err
+	}
+
+	tilesPath := filepath.Join(assetsDir, "tiles.png")
+	playerPath := filepath.Join(assetsDir, "player.png")
+
+	tileTexture, _, _, err := ctx.LoadTexture(tilesPath)
+	if err != nil {
+		return err
+	}
+	playerTexture, _, _, err := ctx.LoadTexture(playerPath)
+	if err != nil {
+		return err
+	}
+	playerWpx, playerHpx, err := pngSize(playerPath)
+	if err != nil {
+		return err
+	}
+
+	g.tileSheet = &render.Spritesheet{
+		Texture:     tileTexture,
+		FrameWidth:  16,
+		FrameHeight: 16,
+		Columns:     4,
+		Rows:        1,
+	}
+	g.playerSheet = &render.Spritesheet{
+		Texture:     playerTexture,
+		FrameWidth:  playerWpx,
+		FrameHeight: playerHpx,
+		Columns:     1,
+		Rows:        1,
+	}
+
+	return nil
+}
+
+func pixelQuestAssetsDir() (string, error) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	return filepath.Join(filepath.Dir(filename), "..", "assets"), nil
+}
+
+func pngSize(path string) (int, int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer file.Close()
+
+	cfg, err := png.DecodeConfig(file)
+	if err != nil {
+		return 0, 0, err
+	}
+	return cfg.Width, cfg.Height, nil
 }

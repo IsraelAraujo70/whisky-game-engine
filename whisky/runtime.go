@@ -48,8 +48,10 @@ type Context struct {
 	logger *log.Logger
 	quit   bool
 
+	platform   *sdl3.Runtime
 	debugLines []string
-	drawCmds   []render.FillRect
+	drawCmds   []render.DrawCmd
+	texSeq     render.TextureID
 }
 
 func (c *Context) Quit() {
@@ -68,14 +70,33 @@ func (c *Context) SetDebugText(lines ...string) {
 	c.debugLines = append(c.debugLines[:0], lines...)
 }
 
+func (c *Context) LoadTexture(path string) (render.TextureID, int, int, error) {
+	if c.platform == nil {
+		c.texSeq++
+		return c.texSeq, 0, 0, nil
+	}
+	return c.platform.LoadTexture(path)
+}
+
+func (c *Context) VirtualSize() (w, h float64) {
+	return float64(c.Config.VirtualWidth), float64(c.Config.VirtualHeight)
+}
+
+func (c *Context) ViewportRect() geom.Rect {
+	vw, vh := c.VirtualSize()
+	if c.Camera == nil {
+		return geom.Rect{W: vw, H: vh}
+	}
+	return c.Camera.ViewportRect(vw, vh)
+}
+
 // DrawRect queues a filled rectangle in world coordinates. The camera
 // transform is applied automatically so callers work in world space.
 // If Camera is nil the rectangle is drawn as-is (screen space).
 func (c *Context) DrawRect(worldRect geom.Rect, color geom.Color) {
 	r := worldRect
 	if c.Camera != nil {
-		vw := float64(c.Config.VirtualWidth)
-		vh := float64(c.Config.VirtualHeight)
+		vw, vh := c.VirtualSize()
 		screenPos := c.Camera.WorldToScreen(
 			geom.Vec2{X: worldRect.X, Y: worldRect.Y}, vw, vh,
 		)
@@ -84,6 +105,28 @@ func (c *Context) DrawRect(worldRect geom.Rect, color geom.Color) {
 	c.drawCmds = append(c.drawCmds, render.FillRect{
 		Rect:  r,
 		Color: color,
+	})
+}
+
+func (c *Context) DrawSprite(texture render.TextureID, src, dst geom.Rect, flipH, flipV bool) {
+	drawDst := dst
+	if c.Camera != nil {
+		vw, vh := c.VirtualSize()
+		screenPos := c.Camera.WorldToScreen(geom.Vec2{X: dst.X, Y: dst.Y}, vw, vh)
+		drawDst = geom.Rect{
+			X: screenPos.X,
+			Y: screenPos.Y,
+			W: dst.W,
+			H: dst.H,
+		}
+	}
+
+	c.drawCmds = append(c.drawCmds, render.SpriteCmd{
+		Texture: texture,
+		Src:     src,
+		Dst:     drawDst,
+		FlipH:   flipH,
+		FlipV:   flipV,
 	})
 }
 
@@ -127,6 +170,7 @@ func Run(game Game, cfg Config) (err error) {
 			}
 		}()
 	}
+	ctx.platform = platform
 
 	if err := game.Load(ctx); err != nil {
 		return err
@@ -169,6 +213,8 @@ func Run(game Game, cfg Config) (err error) {
 			}
 			return err
 		}
+
+		ctx.Scene.Draw(ctx)
 
 		if platform != nil {
 			if err := platform.DrawFrame(ctx.Config.ClearColor, ctx.drawCmds, ctx.overlayLines()); err != nil {

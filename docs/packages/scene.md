@@ -7,6 +7,8 @@ The `scene` package provides the initial gameplay composition model: a scene own
 | File | Purpose |
 |------|---------|
 | `scene.go` | `Scene`, `Node`, `Component`, traversal and lifecycle |
+| `drawable.go` | `Drawable` draw pass over the scene tree |
+| `sprite_component.go` | `SpriteComponent` for texture-backed rendering |
 
 ## Current design
 
@@ -14,8 +16,9 @@ The `scene` package provides the initial gameplay composition model: a scene own
 - `Node` contains local position, parent, children, and components
 - `WorldPosition()` is computed by walking the parent chain
 - components receive `Start`, `Update`, and `Destroy`
+- renderable components may additionally implement `Drawable`
+- `Scene.Draw(ctx)` walks the tree after gameplay updates and emits draw commands
 
 ## Why this model now
 
-The scene graph is simpler than a full ECS and fits the code-first 2D bootstrap well. It is enough to validate hierarchy, lifecycle ordering, and basic gameplay composition before adding renderer-facing components.
-
+The scene graph is simpler than a full ECS and fits the code-first 2D bootstrap well. It now also supports renderer-facing components without changing the base `Component` interface, which keeps existing gameplay code source-compatible while enabling sprite-backed nodes.
