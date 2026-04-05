@@ -6,16 +6,25 @@
 - deterministic lifecycle order
 - graceful shutdown
 - config defaults that make window bootstrap simple
-- future compatibility with a native platform backend
+- virtual resolution scaling with letterbox / pixel-perfect modes
+- keyboard input fed into the action-based input system
 
 ## Current shape
 
-The runtime now creates a basic SDL3 window and renderer. It still exists mainly to lock the API and lifecycle before the GL33 renderer arrives.
+The runtime creates an SDL3 window with virtual resolution scaling via `SetLogicalPresentation`. It polls keyboard state, runs the game loop, collects draw commands, and presents 2D rectangles plus a debug text overlay.
 
 ### Lifecycle
 
 ```text
-Config -> Context -> SDL3 init -> Game.Load() -> loop(Poll + Update + Present) -> Game.Shutdown()
+Config -> Context (+ Camera2D) -> SDL3 init + SetLogicalPresentation -> Game.Load()
+  -> loop:
+       UpdateInput (keyboard -> input.State)
+       Poll native events
+       Scene.Update(dt)
+       Game.Update(dt)       // game calls ctx.DrawRect() here
+       DrawFrame (clear + rects + debug overlay)
+       Reset draw queue
+  -> Game.Shutdown()
 ```
 
 ### Threading
@@ -26,12 +35,16 @@ Config -> Context -> SDL3 init -> Game.Load() -> loop(Poll + Update + Present) -
 
 The runtime uses a target FPS and a ticker-backed frame cadence. It is good enough for the bootstrap slice and easy to replace with a more precise frame scheduler later.
 
-### Bootstrap rendering
+### Virtual resolution
 
-The current frame presentation uses SDL's built-in renderer and debug text:
+SDL3's `SetLogicalPresentation` maps virtual coordinates (default 320x180) to window pixels (default 1280x720). When `Config.PixelPerfect` is true, `LOGICAL_PRESENTATION_INTEGER_SCALE` is used; otherwise `LOGICAL_PRESENTATION_LETTERBOX`. All rendering (rectangles and debug text) operates in the virtual coordinate space.
 
-- clear the window with `Config.ClearColor`
-- draw a small overlay with title, frame count, and optional debug text
-- close on `Esc` or native window close
+### 2D rendering
 
-This is not the long-term rendering architecture. It is only enough to make the engine visibly alive while the renderer stack is still being built.
+Games queue colored rectangles via `ctx.DrawRect(worldRect, color)`. The `Camera2D` on `Context` transforms world coordinates to virtual screen coordinates automatically. The SDL3 platform draws the queued rectangles via `RenderFillRect`, then renders the debug text overlay on top of everything, and finally calls `Present`.
+
+### Input pipeline
+
+Every frame the SDL3 platform reads `sdl.GetKeyboardState()` and maps a fixed set of scancodes (WASD, arrows, space, shift, enter) to string control names. Games bind actions to these controls via `ctx.Input.Bind()` and query them with `Pressed`, `JustPressed`, or `Axis`.
+
+> **Remark:** The scancode-to-control mapping table (`keyMap`) is hardcoded in the platform layer. This must be replaced with a configurable mechanism (e.g. a `KeyMap` on `Config` or a `RegisterKey` API) so games can define arbitrary key bindings.

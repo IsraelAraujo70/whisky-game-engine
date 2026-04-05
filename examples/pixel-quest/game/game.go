@@ -10,6 +10,12 @@ import (
 	whisky "github.com/IsraelAraujo70/whisky-game-engine/whisky"
 )
 
+const (
+	playerW   = 8.0
+	playerH   = 16.0
+	moveSpeed = 80.0 // pixels per second
+)
+
 type pixelQuest struct {
 	player         *scene.Node
 	world          *physics.World
@@ -70,42 +76,118 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 	g.player.Position = geom.Vec2{X: 24, Y: 160}
 	ctx.Scene.Root.AddChild(g.player)
 
+	// --- Input bindings ---
+	ctx.Input.Bind("move_left", "a", "left")
+	ctx.Input.Bind("move_right", "d", "right")
+	ctx.Input.Bind("move_up", "w", "up")
+	ctx.Input.Bind("move_down", "s", "down")
+
 	ctx.Logf("pixel-quest booted with tilemap (%dx%d tiles)", m.Width, m.Height)
-	ctx.SetDebugText(
-		"Whisky SDL3 bootstrap is live.",
-		"Player walks to the right automatically.",
-		"Wait for the trigger, then close with Esc.",
-	)
 	return nil
 }
 
 func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
-	if !g.triggerReached {
-		g.player.Position = g.player.Position.Add(geom.Vec2{X: 0.5, Y: 0})
-	}
+	// --- Movement + collision ---
+	dx := ctx.Input.Axis("move_left", "move_right") * moveSpeed * dt
+	dy := ctx.Input.Axis("move_up", "move_down") * moveSpeed * dt
 
-	hits := g.world.QueryPoint(g.player.WorldPosition(), physics.LayerTrigger)
-	if len(hits) > 0 && !g.triggerReached {
+	// Move X axis, then resolve collisions.
+	g.player.Position.X += dx
+	g.resolveX(dx)
+
+	// Move Y axis, then resolve collisions.
+	g.player.Position.Y += dy
+	g.resolveY(dy)
+
+	// --- Trigger detection ---
+	pp := g.player.WorldPosition()
+	playerRect := geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}
+	triggers := g.world.QueryRect(playerRect, physics.LayerTrigger)
+	if len(triggers) > 0 && !g.triggerReached {
 		g.triggerReached = true
-		ctx.Logf("player reached trigger %s on frame %d", hits[0].ID, ctx.Frames)
+		ctx.Logf("player reached trigger %s on frame %d", triggers[0].ID, ctx.Frames)
 	}
 
+	// --- Rendering ---
+	vw := float64(ctx.Config.VirtualWidth)
+	vh := float64(ctx.Config.VirtualHeight)
+	cameraRect := ctx.Camera.ViewportRect(vw, vh)
+
+	// Draw tiles as colored rectangles.
+	visible := tilemap.VisibleTiles(g.tileMap, cameraRect, geom.Vec2{})
+	tw, th := g.tileMap.TileSize()
+	for _, t := range visible {
+		ctx.DrawRect(geom.Rect{
+			X: t.WorldPos.X,
+			Y: t.WorldPos.Y,
+			W: float64(tw),
+			H: float64(th),
+		}, tileColor(t.ID))
+	}
+
+	// Draw player on top of tiles.
+	ctx.DrawRect(geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}, geom.RGBA(0.2, 0.8, 0.3, 1))
+
+	// --- Debug overlay ---
 	status := "walking"
 	if g.triggerReached {
-		status = "trigger reached"
+		status = "trigger reached!"
 	}
 
-	// Count solid colliders to show merge efficiency.
-	solidCount := len(g.world.QueryRect(g.tileMap.WorldBounds(), physics.LayerWorld))
-
 	ctx.SetDebugText(
-		"Whisky SDL3 bootstrap is live.",
-		fmt.Sprintf("player=(%.1f, %.1f)", g.player.WorldPosition().X, g.player.WorldPosition().Y),
+		"WASD to move",
+		fmt.Sprintf("player=(%.0f, %.0f)", pp.X, pp.Y),
 		fmt.Sprintf("state=%s", status),
-		fmt.Sprintf("map=%dx%d tiles, %d merged colliders", g.tileMap.Width, g.tileMap.Height, solidCount),
-		"Close with Esc or the window close button.",
 	)
 	return nil
+}
+
+// resolveX pushes the player out of solid colliders on the X axis.
+func (g *pixelQuest) resolveX(dx float64) {
+	if dx == 0 {
+		return
+	}
+	bounds := g.playerBounds()
+	for _, h := range g.world.QueryRect(bounds, physics.LayerWorld) {
+		if dx > 0 {
+			g.player.Position.X = h.Bounds.X - playerW
+		} else {
+			g.player.Position.X = h.Bounds.X + h.Bounds.W
+		}
+	}
+}
+
+// resolveY pushes the player out of solid colliders on the Y axis.
+func (g *pixelQuest) resolveY(dy float64) {
+	if dy == 0 {
+		return
+	}
+	bounds := g.playerBounds()
+	for _, h := range g.world.QueryRect(bounds, physics.LayerWorld) {
+		if dy > 0 {
+			g.player.Position.Y = h.Bounds.Y - playerH
+		} else {
+			g.player.Position.Y = h.Bounds.Y + h.Bounds.H
+		}
+	}
+}
+
+func (g *pixelQuest) playerBounds() geom.Rect {
+	p := g.player.WorldPosition()
+	return geom.Rect{X: p.X, Y: p.Y, W: playerW, H: playerH}
+}
+
+func tileColor(id tilemap.TileID) geom.Color {
+	switch id {
+	case 1:
+		return geom.RGBA(0.4, 0.4, 0.45, 1) // solid — gray
+	case 2:
+		return geom.RGBA(0.3, 0.5, 0.7, 1) // one-way — blue
+	case 3:
+		return geom.RGBA(0.9, 0.7, 0.2, 1) // trigger/door — gold
+	default:
+		return geom.RGBA(1, 0, 1, 1) // fallback — magenta
+	}
 }
 
 func (g *pixelQuest) Shutdown(ctx *whisky.Context) error {

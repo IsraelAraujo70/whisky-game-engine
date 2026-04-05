@@ -24,18 +24,27 @@
     "Tilemap rendering interface stubs and viewport culling",
     "Physics World.Clear and World.RemoveByPrefix for dynamic collider management",
     "Pixel-quest example updated with tilemap-based level",
-    "Reserved assets directory conventions in generated projects"
+    "Reserved assets directory conventions in generated projects",
+    "Render package with FillRect draw command and Camera2D (position, viewport, world-to-screen)",
+    "Virtual resolution scaling via SDL3 SetLogicalPresentation (letterbox and integer-scale modes)",
+    "Primitive 2D rectangle rendering through SDL3 RenderFillRect",
+    "Camera2D integration in Context with automatic world-to-screen transform",
+    "Context.DrawRect API for queuing colored rectangles in world coordinates",
+    "SDL3 keyboard state polling fed into input.State via UpdateInput (hardcoded keyMap — see remark below)",
+    "WASD and arrow key input bindings for player movement in pixel-quest example",
+    "Axis-separated collision response (resolveX / resolveY) against solid tile colliders",
+    "Pixel-quest example now renders tilemap as colored rectangles with player movement and collision"
+  ],
+  "remarks": [
+    "The SDL3 keyboard-to-control mapping (keyMap in internal/platform/sdl3/runtime.go) is currently a hardcoded table of scancodes. This MUST be made configurable so games can define their own scancode-to-control mappings — e.g. via a KeyMap field on Config, a RegisterKey API, or a user-supplied mapping passed to the platform layer. The current fixed table is a bootstrap convenience, not the final design."
   ],
   "next": [
-    "Input event mapping from SDL events into engine input actions",
+    "Configurable keyboard mapping — replace hardcoded keyMap with user-defined scancode-to-control table",
     "Window resize awareness and virtual-resolution policy",
     "Renderer abstraction between runtime and draw pipeline",
-    "Primitive 2D rendering for rectangles and lines",
-    "Camera2D and virtual resolution transform",
     "Texture loading and sprite drawing",
     "Scene components for renderable objects",
-    "Action-oriented keyboard input bindings",
-    "Collision resolution on top of the current query world",
+    "Gravity and platformer physics (jump, fall, one-way platform pass-through)",
     "Texture asset loading from PNG",
     "Audio asset loading for WAV or OGG",
     "Font or text rendering path beyond debug overlay",
@@ -46,6 +55,7 @@
     "geom",
     "input",
     "physics",
+    "render",
     "scene",
     "tilemap",
     "whisky"

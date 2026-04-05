@@ -11,6 +11,7 @@ import (
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
 	"github.com/IsraelAraujo70/whisky-game-engine/internal/platform/sdl3"
+	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
 )
 
@@ -41,12 +42,14 @@ type Context struct {
 	Config Config
 	Input  *input.State
 	Scene  *scene.Scene
+	Camera *render.Camera2D
 	Delta  float64
 	Frames int
 	logger *log.Logger
 	quit   bool
 
 	debugLines []string
+	drawCmds   []render.FillRect
 }
 
 func (c *Context) Quit() {
@@ -65,6 +68,25 @@ func (c *Context) SetDebugText(lines ...string) {
 	c.debugLines = append(c.debugLines[:0], lines...)
 }
 
+// DrawRect queues a filled rectangle in world coordinates. The camera
+// transform is applied automatically so callers work in world space.
+// If Camera is nil the rectangle is drawn as-is (screen space).
+func (c *Context) DrawRect(worldRect geom.Rect, color geom.Color) {
+	r := worldRect
+	if c.Camera != nil {
+		vw := float64(c.Config.VirtualWidth)
+		vh := float64(c.Config.VirtualHeight)
+		screenPos := c.Camera.WorldToScreen(
+			geom.Vec2{X: worldRect.X, Y: worldRect.Y}, vw, vh,
+		)
+		r = geom.Rect{X: screenPos.X, Y: screenPos.Y, W: worldRect.W, H: worldRect.H}
+	}
+	c.drawCmds = append(c.drawCmds, render.FillRect{
+		Rect:  r,
+		Color: color,
+	})
+}
+
 func Run(game Game, cfg Config) (err error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -74,6 +96,12 @@ func Run(game Game, cfg Config) (err error) {
 		Config: cfg,
 		Input:  input.NewState(),
 		Scene:  cfg.StartScene,
+		Camera: &render.Camera2D{
+			Position: geom.Vec2{
+				X: float64(cfg.VirtualWidth) / 2,
+				Y: float64(cfg.VirtualHeight) / 2,
+			},
+		},
 		Delta:  1.0 / float64(cfg.TargetFPS),
 		logger: log.New(os.Stdout, "[whisky] ", 0),
 	}
@@ -86,6 +114,10 @@ func Run(game Game, cfg Config) (err error) {
 	if !cfg.Headless && os.Getenv("WHISKY_HEADLESS") != "1" {
 		platform, err = sdl3.New(cfg.Title, cfg.WindowWidth, cfg.WindowHeight)
 		if err != nil {
+			return err
+		}
+		if err = platform.SetLogicalSize(cfg.VirtualWidth, cfg.VirtualHeight, cfg.PixelPerfect); err != nil {
+			_ = platform.Destroy()
 			return err
 		}
 		defer func() {
@@ -111,8 +143,11 @@ func Run(game Game, cfg Config) (err error) {
 	defer ticker.Stop()
 
 	for {
-		if platform != nil && platform.PumpEvents() {
-			ctx.Quit()
+		if platform != nil {
+			platform.UpdateInput(ctx.Input)
+			if platform.PumpEvents() {
+				ctx.Quit()
+			}
 		}
 
 		if ctx.ShouldQuit() {
@@ -136,10 +171,11 @@ func Run(game Game, cfg Config) (err error) {
 		}
 
 		if platform != nil {
-			if err := platform.DrawFrame(ctx.Config.ClearColor, ctx.overlayLines()); err != nil {
+			if err := platform.DrawFrame(ctx.Config.ClearColor, ctx.drawCmds, ctx.overlayLines()); err != nil {
 				return err
 			}
 		}
+		ctx.drawCmds = ctx.drawCmds[:0]
 
 		ctx.Input.NextFrame()
 		ctx.Frames++
