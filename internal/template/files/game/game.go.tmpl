@@ -1,0 +1,38 @@
+package game
+
+import whisky "github.com/IsraelAraujo70/whisky-game-engine/whisky"
+
+type demoGame struct {
+	updates int
+}
+
+func Run() error {
+	return whisky.Run(&demoGame{}, whisky.Config{
+		Title:         "{{ .Title }}",
+		VirtualWidth:  320,
+		VirtualHeight: 180,
+		PixelPerfect:  true,
+		TargetFPS:     60,
+		MaxFrames:     10,
+	})
+}
+
+func (g *demoGame) Load(ctx *whisky.Context) error {
+	ctx.Logf("load %s", ctx.Config.Title)
+	return nil
+}
+
+func (g *demoGame) Update(ctx *whisky.Context, dt float64) error {
+	g.updates++
+	ctx.Logf("update frame=%d dt=%.4f", ctx.Frames, dt)
+	if g.updates >= 10 {
+		ctx.Quit()
+	}
+	return nil
+}
+
+func (g *demoGame) Shutdown(ctx *whisky.Context) error {
+	ctx.Logf("shutdown after %d updates", g.updates)
+	return nil
+}
+

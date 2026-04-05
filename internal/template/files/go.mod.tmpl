@@ -1,0 +1,9 @@
+module {{ .Module }}
+
+go {{ .GoVersion }}
+
+require {{ .EngineModule }} v0.0.0
+{{ if .ReplaceEnginePath }}
+replace {{ .EngineModule }} => {{ .ReplaceEnginePath }}
+{{ end }}
+
