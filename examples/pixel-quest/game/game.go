@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	playerW   = 8.0
-	playerH   = 16.0
-	moveSpeed = 80.0 // pixels per second
+	playerW     = 8.0
+	playerH     = 16.0
+	moveSpeed   = 80.0  // pixels per second
+	sprintSpeed = 160.0 // pixels per second while sprinting
 )
 
 type pixelQuest struct {
@@ -31,16 +32,15 @@ func Run() error {
 		PixelPerfect:  true,
 		TargetFPS:     60,
 		StartScene:    scene.New("pixel-quest"),
+		// KeyMap maps physical keys to semantic control names.
+		// Both WASD and arrow keys resolve to the same controls so
+		// either scheme works without extra bindings in Load().
 		KeyMap: whisky.KeyMap{
-			// Movement — WASD and arrow keys map to the same controls.
-			"w": "w", "up": "up",
-			"a": "a", "left": "left",
-			"s": "s", "down": "down",
-			"d": "d", "right": "right",
-			// Extra controls used by this game.
-			"space":  "space",
-			"lshift": "lshift",
-			"enter":  "enter",
+			"w": "move_up", "up": "move_up",
+			"a": "move_left", "left": "move_left",
+			"s": "move_down", "down": "move_down",
+			"d": "move_right", "right": "move_right",
+			"lshift": "sprint",
 		},
 	})
 }
@@ -88,10 +88,13 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 	ctx.Scene.Root.AddChild(g.player)
 
 	// --- Input bindings ---
-	ctx.Input.Bind("move_left", "a", "left")
-	ctx.Input.Bind("move_right", "d", "right")
-	ctx.Input.Bind("move_up", "w", "up")
-	ctx.Input.Bind("move_down", "s", "down")
+	// Controls are already named after actions in KeyMap, so each
+	// binding is a direct 1-to-1 mapping.
+	ctx.Input.Bind("move_left", "move_left")
+	ctx.Input.Bind("move_right", "move_right")
+	ctx.Input.Bind("move_up", "move_up")
+	ctx.Input.Bind("move_down", "move_down")
+	ctx.Input.Bind("sprint", "sprint")
 
 	ctx.Logf("pixel-quest booted with tilemap (%dx%d tiles)", m.Width, m.Height)
 	return nil
@@ -99,8 +102,12 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 
 func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	// --- Movement + collision ---
-	dx := ctx.Input.Axis("move_left", "move_right") * moveSpeed * dt
-	dy := ctx.Input.Axis("move_up", "move_down") * moveSpeed * dt
+	speed := moveSpeed
+	if ctx.Input.Pressed("sprint") {
+		speed = sprintSpeed
+	}
+	dx := ctx.Input.Axis("move_left", "move_right") * speed * dt
+	dy := ctx.Input.Axis("move_up", "move_down") * speed * dt
 
 	// Move X axis, then resolve collisions.
 	g.player.Position.X += dx
@@ -141,12 +148,15 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 
 	// --- Debug overlay ---
 	status := "walking"
+	if ctx.Input.Pressed("sprint") {
+		status = "sprinting"
+	}
 	if g.triggerReached {
 		status = "trigger reached!"
 	}
 
 	ctx.SetDebugText(
-		"WASD to move",
+		"WASD / arrows to move   LShift to sprint",
 		fmt.Sprintf("player=(%.0f, %.0f)", pp.X, pp.Y),
 		fmt.Sprintf("state=%s", status),
 	)
