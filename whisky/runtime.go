@@ -23,9 +23,11 @@ type Game interface {
 	Shutdown(ctx *Context) error
 }
 
-// KeyMap maps key names (e.g. "space", "w", "up") to control names used by
-// the input system (e.g. "jump", "move_up"). If nil, a default set of
-// controls is used (w/a/s/d, arrows, space, lshift, enter).
+// KeyMap maps key names (e.g. "space", "w", "up") to semantic control names
+// used by the input system (e.g. "jump", "move_up"). If nil, a default set of
+// semantic controls is used: w/up → "move_up", s/down → "move_down",
+// a/left → "move_left", d/right → "move_right", space → "action",
+// lshift → "sprint", enter → "confirm".
 //
 // Supported key names: letter keys ("a"–"z"), digit keys ("0"–"9"), arrow
 // keys ("up", "down", "left", "right"), and named keys ("space", "enter",
@@ -220,17 +222,17 @@ func withDefaults(cfg Config) Config {
 
 	if cfg.KeyMap == nil {
 		cfg.KeyMap = KeyMap{
-			"w":         "w",
-			"a":         "a",
-			"s":         "s",
-			"d":         "d",
-			"up":        "up",
-			"down":      "down",
-			"left":      "left",
-			"right":     "right",
-			"space":     "space",
-			"lshift":    "lshift",
-			"enter":     "enter",
+			"w":     "move_up",
+			"up":    "move_up",
+			"s":     "move_down",
+			"down":  "move_down",
+			"a":     "move_left",
+			"left":  "move_left",
+			"d":     "move_right",
+			"right": "move_right",
+			"space": "action",
+			"lshift": "sprint",
+			"enter": "confirm",
 		}
 	}
 
