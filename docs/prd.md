@@ -123,13 +123,13 @@ whisky doctor
 - The generated project can run through `whisky run`.
 - The example project demonstrates the expected public API shape.
 
-## Development Phases
+## Development Areas
 
-| Phase | Focus | Key Deliverables |
-|-------|-------|-----------------|
-| **Sprint 1** | Foundation | runtime loop, config, CLI, templates, docs, tests |
-| **Sprint 2** | Native runtime | SDL3 init, thread model, platform input shell |
-| **Sprint 3** | Rendering | GL33 context, sprite batch, camera, clear/present |
-| **Sprint 4** | Content | assets, tilemap ingestion, animation, sample game |
-| **Sprint 5** | Gameplay polish | audio, collision workflow, editor-facing metadata |
+| Area | Focus | Key Deliverables |
+|------|-------|-----------------|
+| **Foundation** | Core architecture | runtime loop, config, CLI, templates, docs, tests |
+| **Native runtime** | Platform layer | SDL3 init, thread model, platform input shell |
+| **Rendering** | Visual output | GL33 context, sprite batch, camera, clear/present |
+| **Content** | Asset pipeline | assets, tilemap ingestion, animation, sample game |
+| **Gameplay** | Game systems | audio, collision workflow, editor-facing metadata |
 

@@ -43,3 +43,45 @@ func TestWorldQueries(t *testing.T) {
 		t.Fatalf("expected one collider from rect query, got %d", got)
 	}
 }
+
+func TestWorldClear(t *testing.T) {
+	world := NewWorld()
+	world.Add(Collider{ID: "a", Bounds: geom.Rect{X: 0, Y: 0, W: 4, H: 4}, Layer: LayerWorld, Mask: LayerPlayer})
+	world.Add(Collider{ID: "b", Bounds: geom.Rect{X: 8, Y: 8, W: 4, H: 4}, Layer: LayerWorld, Mask: LayerPlayer})
+
+	world.Clear()
+
+	if got := len(world.QueryRect(geom.Rect{X: 0, Y: 0, W: 100, H: 100}, LayerWorld)); got != 0 {
+		t.Fatalf("expected 0 colliders after Clear, got %d", got)
+	}
+}
+
+func TestWorldRemoveByPrefix(t *testing.T) {
+	world := NewWorld()
+	world.Add(Collider{ID: "tile:terrain:0,0:1x1", Bounds: geom.Rect{X: 0, Y: 0, W: 16, H: 16}, Layer: LayerWorld, Mask: LayerPlayer})
+	world.Add(Collider{ID: "tile:terrain:1,0:1x1", Bounds: geom.Rect{X: 16, Y: 0, W: 16, H: 16}, Layer: LayerWorld, Mask: LayerPlayer})
+	world.Add(Collider{ID: "player", Bounds: geom.Rect{X: 32, Y: 0, W: 8, H: 8}, Layer: LayerPlayer, Mask: LayerWorld})
+
+	world.RemoveByPrefix("tile:")
+
+	all := world.QueryRect(geom.Rect{X: 0, Y: 0, W: 100, H: 100}, LayerWorld|LayerPlayer)
+	if got := len(all); got != 1 {
+		t.Fatalf("expected 1 collider after RemoveByPrefix, got %d", got)
+	}
+	if all[0].ID != "player" {
+		t.Fatalf("expected remaining collider to be 'player', got %q", all[0].ID)
+	}
+}
+
+// [M1] RemoveByPrefix with empty string must be a no-op.
+func TestWorldRemoveByPrefixEmptyStringIsNoop(t *testing.T) {
+	world := NewWorld()
+	world.Add(Collider{ID: "a", Bounds: geom.Rect{X: 0, Y: 0, W: 4, H: 4}, Layer: LayerWorld, Mask: LayerPlayer})
+	world.Add(Collider{ID: "b", Bounds: geom.Rect{X: 8, Y: 8, W: 4, H: 4}, Layer: LayerWorld, Mask: LayerPlayer})
+
+	world.RemoveByPrefix("")
+
+	if got := len(world.QueryRect(geom.Rect{X: 0, Y: 0, W: 100, H: 100}, LayerWorld)); got != 2 {
+		t.Fatalf("expected 2 colliders after RemoveByPrefix(''), got %d", got)
+	}
+}

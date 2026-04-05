@@ -1,6 +1,10 @@
 package physics
 
-import "github.com/IsraelAraujo70/whisky-game-engine/geom"
+import (
+	"strings"
+
+	"github.com/IsraelAraujo70/whisky-game-engine/geom"
+)
 
 type Layer uint32
 
@@ -50,6 +54,28 @@ func (w *World) QueryPoint(point geom.Vec2, mask Layer) []Collider {
 	}
 
 	return result
+}
+
+// Clear removes all colliders from the world.
+func (w *World) Clear() {
+	w.colliders = w.colliders[:0]
+}
+
+// RemoveByPrefix removes all colliders whose ID starts with prefix.
+// An empty prefix is a no-op to prevent accidental deletion of all colliders;
+// use Clear() explicitly instead.
+func (w *World) RemoveByPrefix(prefix string) {
+	if prefix == "" {
+		return
+	}
+	n := 0
+	for _, c := range w.colliders {
+		if !strings.HasPrefix(c.ID, prefix) {
+			w.colliders[n] = c
+			n++
+		}
+	}
+	w.colliders = w.colliders[:n]
 }
 
 func (w *World) QueryRect(bounds geom.Rect, mask Layer) []Collider {

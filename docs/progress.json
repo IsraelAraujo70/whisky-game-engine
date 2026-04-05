@@ -1,235 +1,58 @@
 {
   "project": "whisky-game-engine",
   "version": "0.1.0-dev",
-  "sprints": [
-    {
-      "id": 1,
-      "name": "Foundation",
-      "status": "done",
-      "completed_at": "2026-04-04",
-      "summary": "Repository bootstrap, core public packages, internal docs, CLI scaffolding, and the first runnable example",
-      "deliverables": [
-        {
-          "item": "Go project scaffolding (go.mod, go.sum, .gitignore, Makefile, README, LICENSE)",
-          "status": "done"
-        },
-        {
-          "item": "Internal documentation layout aligned with crit-ide (PRD, package docs, spec docs, progress tracking)",
-          "status": "done"
-        },
-        {
-          "item": "Public foundation packages: geom, scene, input, physics, whisky",
-          "status": "done"
-        },
-        {
-          "item": "Project config format via whisky.json",
-          "status": "done"
-        },
-        {
-          "item": "CLI commands: whisky new, whisky run, whisky doctor",
-          "status": "done"
-        },
-        {
-          "item": "Embedded starter-project templates and local replace-aware scaffolding",
-          "status": "done"
-        },
-        {
-          "item": "Starter example project: pixel-quest",
-          "status": "done"
-        },
-        {
-          "item": "Unit test coverage for geom, input, scene, physics, and project scaffolding",
-          "status": "done"
-        }
-      ],
-      "public_packages": [
-        "geom",
-        "input",
-        "physics",
-        "scene",
-        "whisky"
-      ],
-      "cli_commands": {
-        "whisky new <name-or-path>": "Create a new Whisky game project and run go mod tidy inside it",
-        "whisky run [dir]": "Run a Whisky project using the entry_point declared in whisky.json",
-        "whisky doctor": "Inspect Go, git, pkg-config, SDL3, and OpenGL availability"
-      }
-    },
-    {
-      "id": 2,
-      "name": "Native Runtime",
-      "status": "in_progress",
-      "summary": "SDL3 window bootstrap, event pump, close flow, and on-screen debug overlay",
-      "deliverables": [
-        {
-          "item": "SDL3 dynamic library loading through go-sdl3",
-          "status": "done"
-        },
-        {
-          "item": "Main-thread runtime contract in whisky.Run",
-          "status": "done"
-        },
-        {
-          "item": "Window creation and teardown lifecycle",
-          "status": "done"
-        },
-        {
-          "item": "Event polling for window close and Escape key",
-          "status": "done"
-        },
-        {
-          "item": "Debug overlay rendering with SDL renderer text",
-          "status": "done"
-        },
-        {
-          "item": "Headless escape hatch for automation via WHISKY_HEADLESS",
-          "status": "done"
-        },
-        {
-          "item": "Input event mapping from SDL events into engine input actions",
-          "status": "planned"
-        },
-        {
-          "item": "Window resize awareness and virtual-resolution policy",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "name": "2D Renderer",
-      "status": "planned",
-      "summary": "Visible world rendering, camera, and first sprite-capable pipeline",
-      "deliverables": [
-        {
-          "item": "Renderer abstraction between runtime and draw pipeline",
-          "status": "planned"
-        },
-        {
-          "item": "Primitive 2D rendering for rectangles and lines",
-          "status": "planned"
-        },
-        {
-          "item": "Camera2D and virtual resolution transform",
-          "status": "planned"
-        },
-        {
-          "item": "Texture loading and sprite drawing",
-          "status": "planned"
-        },
-        {
-          "item": "First visible pixel-quest scene beyond debug text",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "name": "Gameplay Systems",
-      "status": "planned",
-      "summary": "Engine-facing game building blocks for a real 2D prototype",
-      "deliverables": [
-        {
-          "item": "Scene components for renderable objects",
-          "status": "planned"
-        },
-        {
-          "item": "Action-oriented keyboard input bindings",
-          "status": "planned"
-        },
-        {
-          "item": "Collision resolution on top of the current query world",
-          "status": "planned"
-        },
-        {
-          "item": "Simple trigger and pickup workflow",
-          "status": "planned"
-        },
-        {
-          "item": "Sample gameplay loop with controllable player",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "name": "Assets and Content",
-      "status": "planned",
-      "summary": "File-backed content pipeline for a usable 2D engine slice",
-      "deliverables": [
-        {
-          "item": "Texture asset loading from PNG",
-          "status": "planned"
-        },
-        {
-          "item": "Audio asset loading for WAV or OGG",
-          "status": "planned"
-        },
-        {
-          "item": "Font or text rendering path beyond debug overlay",
-          "status": "planned"
-        },
-        {
-          "item": "Asset cache and invalidation hooks",
-          "status": "planned"
-        },
-        {
-          "item": "Reserved assets directory conventions in generated projects",
-          "status": "done"
-        }
-      ]
-    },
-    {
-      "id": 6,
-      "name": "Tooling and DX",
-      "status": "planned",
-      "summary": "Developer workflow improvements around project creation, iteration, and diagnostics",
-      "deliverables": [
-        {
-          "item": "Project templates for additional game styles",
-          "status": "planned"
-        },
-        {
-          "item": "Hot reload for file-backed assets",
-          "status": "planned"
-        },
-        {
-          "item": "Richer whisky doctor output with OS-specific guidance",
-          "status": "planned"
-        },
-        {
-          "item": "Build and release scripts for example binaries",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "name": "Pixel Quest Vertical Slice",
-      "status": "planned",
-      "summary": "Turn the sample into a small but actually game-like validation target",
-      "deliverables": [
-        {
-          "item": "Visible map and player sprite",
-          "status": "planned"
-        },
-        {
-          "item": "Keyboard movement",
-          "status": "planned"
-        },
-        {
-          "item": "Trigger, pickup, and simple objective",
-          "status": "planned"
-        },
-        {
-          "item": "Sound effect and background music",
-          "status": "planned"
-        },
-        {
-          "item": "End-to-end sample that validates public APIs only",
-          "status": "planned"
-        }
-      ]
-    }
-  ]
+  "done": [
+    "Go project scaffolding (go.mod, go.sum, .gitignore, Makefile, README, LICENSE)",
+    "Internal documentation layout (PRD, package docs, spec docs, progress tracking)",
+    "Public foundation packages: geom, scene, input, physics, whisky",
+    "Project config format via whisky.json",
+    "CLI commands: whisky new, whisky run, whisky doctor",
+    "Embedded starter-project templates and local replace-aware scaffolding",
+    "Starter example project: pixel-quest",
+    "Unit test coverage for geom, input, scene, physics, and project scaffolding",
+    "SDL3 dynamic library loading through go-sdl3",
+    "Main-thread runtime contract in whisky.Run",
+    "Window creation and teardown lifecycle",
+    "Event polling for window close and Escape key",
+    "Debug overlay rendering with SDL renderer text",
+    "Headless escape hatch for automation via WHISKY_HEADLESS",
+    "Tilemap package with TileSet, TileLayer, TileMap, and coordinate conversion",
+    "Tilemap builder API for programmatic level construction",
+    "Greedy merge collider generation from solid tiles",
+    "TileMapComponent scene integration with physics world",
+    "Tilemap JSON serialization and deserialization",
+    "Tilemap rendering interface stubs and viewport culling",
+    "Physics World.Clear and World.RemoveByPrefix for dynamic collider management",
+    "Pixel-quest example updated with tilemap-based level",
+    "Reserved assets directory conventions in generated projects"
+  ],
+  "next": [
+    "Input event mapping from SDL events into engine input actions",
+    "Window resize awareness and virtual-resolution policy",
+    "Renderer abstraction between runtime and draw pipeline",
+    "Primitive 2D rendering for rectangles and lines",
+    "Camera2D and virtual resolution transform",
+    "Texture loading and sprite drawing",
+    "Scene components for renderable objects",
+    "Action-oriented keyboard input bindings",
+    "Collision resolution on top of the current query world",
+    "Texture asset loading from PNG",
+    "Audio asset loading for WAV or OGG",
+    "Font or text rendering path beyond debug overlay",
+    "Asset cache and invalidation hooks",
+    "Hot reload for file-backed assets"
+  ],
+  "public_packages": [
+    "geom",
+    "input",
+    "physics",
+    "scene",
+    "tilemap",
+    "whisky"
+  ],
+  "cli_commands": {
+    "whisky new <name-or-path>": "Create a new Whisky game project and run go mod tidy inside it",
+    "whisky run [dir]": "Run a Whisky project using the entry_point declared in whisky.json",
+    "whisky doctor": "Inspect Go, git, pkg-config, SDL3, and OpenGL availability"
+  }
 }
