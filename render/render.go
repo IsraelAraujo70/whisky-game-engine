@@ -8,6 +8,8 @@ type FillRect struct {
 	Color geom.Color
 }
 
+func (FillRect) drawCmd() {}
+
 // Camera2D provides world-to-screen coordinate transformation for 2D rendering.
 // Position represents the center of the camera in world coordinates.
 type Camera2D struct {

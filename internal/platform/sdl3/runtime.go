@@ -74,6 +74,7 @@ func buildKeyBindings(km map[string]string) []keyBinding {
 type Runtime struct {
 	window         *sdl.Window
 	renderer       *sdl.Renderer
+	textures       *textureCache
 	libraryLoaded  bool
 	sdlInitialized bool
 	keyBindings    []keyBinding
@@ -109,6 +110,7 @@ func New(title string, width, height int, keyMap map[string]string) (*Runtime, e
 
 	rt.window = window
 	rt.renderer = renderer
+	rt.textures = newTextureCache(renderer)
 	return rt, nil
 }
 
@@ -161,7 +163,11 @@ func (rt *Runtime) PumpEvents() bool {
 	return false
 }
 
-func (rt *Runtime) DrawFrame(clearColor geom.Color, rects []render.FillRect, lines []string) error {
+func (rt *Runtime) LoadTexture(path string) (render.TextureID, int, int, error) {
+	return rt.textures.Load(path)
+}
+
+func (rt *Runtime) DrawFrame(clearColor geom.Color, cmds []render.DrawCmd, lines []string) error {
 	if err := rt.renderer.SetDrawColorFloat(
 		clearColor.R, clearColor.G, clearColor.B, clearColor.A,
 	); err != nil {
@@ -172,21 +178,58 @@ func (rt *Runtime) DrawFrame(clearColor geom.Color, rects []render.FillRect, lin
 		return err
 	}
 
-	// Draw filled rectangles (tiles, player, etc.).
-	for _, r := range rects {
-		if err := rt.renderer.SetDrawColorFloat(
-			r.Color.R, r.Color.G, r.Color.B, r.Color.A,
-		); err != nil {
-			return err
-		}
-		fr := sdl.FRect{
-			X: float32(r.Rect.X),
-			Y: float32(r.Rect.Y),
-			W: float32(r.Rect.W),
-			H: float32(r.Rect.H),
-		}
-		if err := rt.renderer.RenderFillRect(&fr); err != nil {
-			return err
+	for _, cmd := range cmds {
+		switch c := cmd.(type) {
+		case render.FillRect:
+			if err := rt.renderer.SetDrawColorFloat(
+				c.Color.R, c.Color.G, c.Color.B, c.Color.A,
+			); err != nil {
+				return err
+			}
+			fr := sdl.FRect{
+				X: float32(c.Rect.X),
+				Y: float32(c.Rect.Y),
+				W: float32(c.Rect.W),
+				H: float32(c.Rect.H),
+			}
+			if err := rt.renderer.RenderFillRect(&fr); err != nil {
+				return err
+			}
+		case render.SpriteCmd:
+			texture := rt.textures.Get(c.Texture)
+			if texture == nil {
+				continue
+			}
+			src := sdl.FRect{
+				X: float32(c.Src.X),
+				Y: float32(c.Src.Y),
+				W: float32(c.Src.W),
+				H: float32(c.Src.H),
+			}
+			dst := sdl.FRect{
+				X: float32(c.Dst.X),
+				Y: float32(c.Dst.Y),
+				W: float32(c.Dst.W),
+				H: float32(c.Dst.H),
+			}
+
+			if c.FlipH || c.FlipV {
+				flip := sdl.FLIP_NONE
+				if c.FlipH {
+					flip |= sdl.FLIP_HORIZONTAL
+				}
+				if c.FlipV {
+					flip |= sdl.FLIP_VERTICAL
+				}
+				if err := rt.renderer.RenderTextureRotated(texture, &src, &dst, 0, nil, flip); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if err := rt.renderer.RenderTexture(texture, &src, &dst); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -204,6 +247,11 @@ func (rt *Runtime) DrawFrame(clearColor geom.Color, rects []render.FillRect, lin
 }
 
 func (rt *Runtime) Destroy() error {
+	if rt.textures != nil {
+		rt.textures.DestroyAll()
+		rt.textures = nil
+	}
+
 	if rt.renderer != nil {
 		rt.renderer.Destroy()
 		rt.renderer = nil
@@ -226,4 +274,3 @@ func (rt *Runtime) Destroy() error {
 
 	return nil
 }
-

@@ -3,6 +3,7 @@ package tilemap
 import (
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
+	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
 )
 
@@ -19,6 +20,7 @@ type TileMapComponent struct {
 	Map    *TileMap
 	World  *physics.World
 	Config ColliderConfig
+	Sheet  *render.Spritesheet
 
 	dirty   bool
 	started bool
@@ -28,6 +30,7 @@ type TileMapComponent struct {
 
 // Compile-time interface check.
 var _ scene.Component = (*TileMapComponent)(nil)
+var _ scene.Drawable = (*TileMapComponent)(nil)
 
 // Start generates tile colliders and adds them to the physics world.
 // The collider ID prefix includes the node name to avoid collisions between
@@ -68,6 +71,31 @@ func (c *TileMapComponent) Destroy(node *scene.Node) error {
 	}
 	c.World.RemoveByPrefix(c.prefix)
 	return nil
+}
+
+func (c *TileMapComponent) Draw(node *scene.Node, ctx render.DrawContext) {
+	if c == nil || c.Map == nil || c.Sheet == nil {
+		return
+	}
+
+	c.offset = node.WorldPosition()
+	visible := VisibleTiles(c.Map, ctx.ViewportRect(), c.offset)
+	tw, th := c.Map.TileSize()
+	for _, tile := range visible {
+		frame := int(tile.ID) - 1
+		ctx.DrawSprite(
+			c.Sheet.Texture,
+			c.Sheet.FrameRect(frame),
+			geom.Rect{
+				X: tile.WorldPos.X,
+				Y: tile.WorldPos.Y,
+				W: float64(tw),
+				H: float64(th),
+			},
+			false,
+			false,
+		)
+	}
 }
 
 // MarkDirty flags the component for collider rebuild on the next Update.

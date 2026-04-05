@@ -5,8 +5,38 @@ import (
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
+	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
 )
+
+type tileDrawContextStub struct {
+	sprites []tileSpriteCall
+}
+
+type tileSpriteCall struct {
+	texture render.TextureID
+	src     geom.Rect
+	dst     geom.Rect
+}
+
+func (d *tileDrawContextStub) DrawRect(worldRect geom.Rect, color geom.Color) {
+}
+
+func (d *tileDrawContextStub) DrawSprite(texture render.TextureID, src, dst geom.Rect, flipH, flipV bool) {
+	d.sprites = append(d.sprites, tileSpriteCall{
+		texture: texture,
+		src:     src,
+		dst:     dst,
+	})
+}
+
+func (d *tileDrawContextStub) VirtualSize() (w, h float64) {
+	return 32, 32
+}
+
+func (d *tileDrawContextStub) ViewportRect() geom.Rect {
+	return geom.Rect{X: 0, Y: 0, W: 32, H: 32}
+}
 
 func TestTileMapComponentStart(t *testing.T) {
 	ts := NewTileSet("test", 16, 16, 4)
@@ -232,5 +262,48 @@ func TestTwoTileMapComponentsIndependent(t *testing.T) {
 	remaining := world.QueryRect(geom.Rect{X: 0, Y: 0, W: 48, H: 48}, physics.LayerWorld)
 	if len(remaining) != 1 {
 		t.Fatalf("expected 1 collider after destroying comp1, got %d", len(remaining))
+	}
+}
+
+func TestTileMapComponentDraw(t *testing.T) {
+	ts := NewTileSet("test", 16, 16, 4)
+	m := New(ts, 3, 3)
+	m.AddLayer("terrain")
+	m.SetTile("terrain", 0, 0, 1)
+	m.SetTile("terrain", 1, 0, 2)
+
+	comp := &TileMapComponent{
+		Map: m,
+		Sheet: &render.Spritesheet{
+			Texture:     11,
+			FrameWidth:  16,
+			FrameHeight: 16,
+			Columns:     2,
+			Rows:        2,
+		},
+	}
+
+	node := scene.NewNode("level")
+	ctx := &tileDrawContextStub{}
+	comp.Draw(node, ctx)
+
+	if len(ctx.sprites) != 2 {
+		t.Fatalf("expected 2 sprites, got %d", len(ctx.sprites))
+	}
+
+	if ctx.sprites[0] != (tileSpriteCall{
+		texture: 11,
+		src:     geom.Rect{X: 0, Y: 0, W: 16, H: 16},
+		dst:     geom.Rect{X: 0, Y: 0, W: 16, H: 16},
+	}) {
+		t.Fatalf("unexpected first sprite: %#v", ctx.sprites[0])
+	}
+
+	if ctx.sprites[1] != (tileSpriteCall{
+		texture: 11,
+		src:     geom.Rect{X: 16, Y: 0, W: 16, H: 16},
+		dst:     geom.Rect{X: 16, Y: 0, W: 16, H: 16},
+	}) {
+		t.Fatalf("unexpected second sprite: %#v", ctx.sprites[1])
 	}
 }
