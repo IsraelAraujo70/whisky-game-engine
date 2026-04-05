@@ -7,11 +7,12 @@ import (
 )
 
 func TestBuildKeyBindings_knownKeys(t *testing.T) {
+	// Each key maps to a unique control so the scancode→control assertion
+	// is deterministic (no two keys share the same control here).
 	km := map[string]string{
 		"w":     "move_up",
 		"a":     "move_left",
 		"space": "jump",
-		"up":    "move_up",
 	}
 
 	bindings := buildKeyBindings(km)
@@ -20,29 +21,29 @@ func TestBuildKeyBindings_knownKeys(t *testing.T) {
 		t.Fatalf("expected %d bindings, got %d", len(km), len(bindings))
 	}
 
-	// Index by control name for assertion.
-	byControl := make(map[string]sdl.Scancode, len(bindings))
+	// Index by scancode for assertion.
+	byScancode := make(map[sdl.Scancode]string, len(bindings))
 	for _, b := range bindings {
-		byControl[b.control] = b.scancode
+		byScancode[b.scancode] = b.control
 	}
 
 	cases := []struct {
-		control  string
 		scancode sdl.Scancode
+		control  string
 	}{
-		{"move_up", sdl.SCANCODE_W},    // "w" → move_up resolves to W scancode
-		{"move_left", sdl.SCANCODE_A},
-		{"jump", sdl.SCANCODE_SPACE},
+		{sdl.SCANCODE_W, "move_up"},
+		{sdl.SCANCODE_A, "move_left"},
+		{sdl.SCANCODE_SPACE, "jump"},
 	}
 
 	for _, c := range cases {
-		sc, ok := byControl[c.control]
+		ctrl, ok := byScancode[c.scancode]
 		if !ok {
-			t.Errorf("control %q not found in bindings", c.control)
+			t.Errorf("scancode %v not found in bindings", c.scancode)
 			continue
 		}
-		if sc != c.scancode {
-			t.Errorf("control %q: expected scancode %v, got %v", c.control, c.scancode, sc)
+		if ctrl != c.control {
+			t.Errorf("scancode %v: expected control %q, got %q", c.scancode, c.control, ctrl)
 		}
 	}
 }
@@ -77,6 +78,38 @@ func TestBuildKeyBindings_nilMap(t *testing.T) {
 
 	if len(bindings) != 0 {
 		t.Fatalf("expected 0 bindings for nil map, got %d", len(bindings))
+	}
+}
+
+// TestBuildKeyBindings_sharedControl verifies that multiple keys can map to
+// the same control name. This is the foundation for the two-pass OR logic in
+// UpdateInput: if "w" and "up" both map to "move_up", both bindings must be
+// present so the second pass can set the control true when either key is held.
+func TestBuildKeyBindings_sharedControl(t *testing.T) {
+	km := map[string]string{
+		"w":  "move_up",
+		"up": "move_up",
+	}
+
+	bindings := buildKeyBindings(km)
+
+	if len(bindings) != 2 {
+		t.Fatalf("expected 2 bindings for two keys sharing a control, got %d", len(bindings))
+	}
+
+	scancodes := map[sdl.Scancode]bool{}
+	for _, b := range bindings {
+		if b.control != "move_up" {
+			t.Errorf("expected control 'move_up', got %q", b.control)
+		}
+		scancodes[b.scancode] = true
+	}
+
+	if !scancodes[sdl.SCANCODE_W] {
+		t.Error("expected SCANCODE_W in bindings")
+	}
+	if !scancodes[sdl.SCANCODE_UP] {
+		t.Error("expected SCANCODE_UP in bindings")
 	}
 }
 
