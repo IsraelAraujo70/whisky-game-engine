@@ -71,8 +71,9 @@ func GenerateColliders(m *TileMap, offset geom.Vec2, cfg ColliderConfig) []physi
 							W: float64(tw),
 							H: float64(th),
 						},
-						Layer: cfg.SolidLayer,
-						Mask:  cfg.SolidMask,
+						Layer:  cfg.SolidLayer,
+						Mask:   cfg.SolidMask,
+						OneWay: true,
 					})
 					continue
 				}

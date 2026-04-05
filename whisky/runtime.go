@@ -50,6 +50,9 @@ type Config struct {
 	// KeyMap defines the scancode-to-control mapping for the platform layer.
 	// Nil means use the built-in defaults.
 	KeyMap KeyMap
+	// GravityY is the downward acceleration applied per second (px/s²).
+	// Zero means no gravity. Games read this via ctx.Config.GravityY.
+	GravityY float64
 }
 
 type Context struct {

@@ -11,7 +11,9 @@
     "Starter example project: pixel-quest",
     "Unit test coverage for geom, input, scene, physics, and project scaffolding",
     "SDL3 dynamic library loading through go-sdl3",
-    "Configurable keyboard mapping via Config.KeyMap (whisky.KeyMap) — replaces hardcoded keyMap in sdl3 platform layer",
+    "Configurable keyboard mapping via Config.KeyMap (whisky.KeyMap) — replaces hardcoded keyMap in sdl3 platform layer; default uses semantic control names (move_up, move_down, move_left, move_right, action, sprint, confirm)",
+    "Two-pass UpdateInput for shared controls (reset all → OR pressed) preventing non-deterministic input",
+    "WHISKY_SDL3_PATH env var support for macOS (workaround for SIP stripping DYLD_LIBRARY_PATH)",
     "Main-thread runtime contract in whisky.Run",
     "Window creation and teardown lifecycle",
     "Event polling for window close and Escape key",
@@ -34,7 +36,11 @@
     "SDL3 keyboard state polling fed into input.State via UpdateInput (hardcoded keyMap — see remark below)",
     "WASD and arrow key input bindings for player movement in pixel-quest example",
     "Axis-separated collision response (resolveX / resolveY) against solid tile colliders",
-    "Pixel-quest example now renders tilemap as colored rectangles with player movement and collision"
+    "Pixel-quest example now renders tilemap as colored rectangles with player movement and collision",
+    "physics.Collider.OneWay field for pass-through platforms; set automatically by GenerateColliders",
+    "Config.GravityY: configurable downward acceleration (px/s²), default 0 (backwards-compatible)",
+    "Platformer physics in pixel-quest: gravity accumulation, jump impulse, double jump (jumpsLeft), resolveX/resolveY with one-way platform awareness",
+    "Unit and integration tests for gravity, resolveY (solid/one-way/ceiling), and full tilemap→physics→game pipeline"
   ],
   "remarks": [],
   "next": [
@@ -42,7 +48,6 @@
     "Renderer abstraction between runtime and draw pipeline",
     "Texture loading and sprite drawing",
     "Scene components for renderable objects",
-    "Gravity and platformer physics (jump, fall, one-way platform pass-through)",
     "Texture asset loading from PNG",
     "Audio asset loading for WAV or OGG",
     "Font or text rendering path beyond debug overlay",

@@ -13,8 +13,9 @@ import (
 const (
 	playerW     = 8.0
 	playerH     = 16.0
-	moveSpeed   = 80.0  // pixels per second
-	sprintSpeed = 160.0 // pixels per second while sprinting
+	moveSpeed   = 80.0   // pixels per second
+	sprintSpeed = 160.0  // pixels per second while sprinting
+	jumpVel     = -200.0 // pixels per second upward (negative Y = up)
 )
 
 type pixelQuest struct {
@@ -22,6 +23,9 @@ type pixelQuest struct {
 	world          *physics.World
 	tileMap        *tilemap.TileMap
 	triggerReached bool
+	velocity       geom.Vec2 // accumulates gravity and jump impulse
+	grounded       bool      // true when standing on solid or one-way surface
+	jumpsLeft      int       // remaining jumps (reset to 2 on landing)
 }
 
 func Run() error {
@@ -31,16 +35,15 @@ func Run() error {
 		VirtualHeight: 180,
 		PixelPerfect:  true,
 		TargetFPS:     60,
+		GravityY:      400.0, // px/s² downward
 		StartScene:    scene.New("pixel-quest"),
 		// KeyMap maps physical keys to semantic control names.
-		// Both WASD and arrow keys resolve to the same controls so
-		// either scheme works without extra bindings in Load().
+		// Space and Up arrow both trigger jump.
 		KeyMap: whisky.KeyMap{
-			"w": "move_up", "up": "move_up",
 			"a": "move_left", "left": "move_left",
-			"s": "move_down", "down": "move_down",
 			"d": "move_right", "right": "move_right",
 			"lshift": "sprint",
+			"space": "jump", "up": "jump", "w": "jump",
 		},
 	})
 }
@@ -84,38 +87,54 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 
 	// --- Player setup ---
 	g.player = scene.NewNode("player")
-	g.player.Position = geom.Vec2{X: 24, Y: 160}
+	g.player.Position = geom.Vec2{X: 24, Y: 144}
 	ctx.Scene.Root.AddChild(g.player)
 
 	// --- Input bindings ---
-	// Controls are already named after actions in KeyMap, so each
-	// binding is a direct 1-to-1 mapping.
 	ctx.Input.Bind("move_left", "move_left")
 	ctx.Input.Bind("move_right", "move_right")
-	ctx.Input.Bind("move_up", "move_up")
-	ctx.Input.Bind("move_down", "move_down")
 	ctx.Input.Bind("sprint", "sprint")
+	ctx.Input.Bind("jump", "jump")
 
 	ctx.Logf("pixel-quest booted with tilemap (%dx%d tiles)", m.Width, m.Height)
 	return nil
 }
 
 func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
-	// --- Movement + collision ---
+	// Reset grounded each frame — resolveY sets it back to true on landing.
+	g.grounded = false
+
+	// --- Horizontal movement ---
 	speed := moveSpeed
 	if ctx.Input.Pressed("sprint") {
 		speed = sprintSpeed
 	}
 	dx := ctx.Input.Axis("move_left", "move_right") * speed * dt
-	dy := ctx.Input.Axis("move_up", "move_down") * speed * dt
-
-	// Move X axis, then resolve collisions.
 	g.player.Position.X += dx
 	g.resolveX(dx)
 
-	// Move Y axis, then resolve collisions.
+	// --- Apply gravity ---
+	g.velocity.Y += ctx.Config.GravityY * dt
+
+	// Store bottom edge before moving Y (needed for one-way platform detection).
+	prevBottom := g.player.Position.Y + playerH
+
+	// --- Move Y and resolve ---
+	// resolveY sets g.grounded=true if landing on something this frame.
+	dy := g.velocity.Y * dt
 	g.player.Position.Y += dy
-	g.resolveY(dy)
+	g.resolveY(dy, prevBottom)
+
+	// Reset jumpsLeft when landing.
+	if g.grounded {
+		g.jumpsLeft = 2
+	}
+
+	// --- Jump (checked after resolveY so g.grounded is accurate) ---
+	if g.jumpsLeft > 0 && ctx.Input.JustPressed("jump") {
+		g.velocity.Y = jumpVel
+		g.jumpsLeft--
+	}
 
 	// --- Trigger detection ---
 	pp := g.player.WorldPosition()
@@ -147,8 +166,11 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	ctx.DrawRect(geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}, geom.RGBA(0.2, 0.8, 0.3, 1))
 
 	// --- Debug overlay ---
-	status := "walking"
-	if ctx.Input.Pressed("sprint") {
+	status := "airborne"
+	if g.grounded {
+		status = "grounded"
+	}
+	if ctx.Input.Pressed("sprint") && g.grounded {
 		status = "sprinting"
 	}
 	if g.triggerReached {
@@ -156,20 +178,24 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	}
 
 	ctx.SetDebugText(
-		"WASD / arrows to move   LShift to sprint",
-		fmt.Sprintf("player=(%.0f, %.0f)", pp.X, pp.Y),
-		fmt.Sprintf("state=%s", status),
+		"A/D to move   Space/W/Up to jump   LShift to sprint",
+		fmt.Sprintf("player=(%.0f,%.0f) vel=(%.0f,%.0f)", pp.X, pp.Y, g.velocity.X, g.velocity.Y),
+		fmt.Sprintf("grounded=%v  state=%s", g.grounded, status),
 	)
 	return nil
 }
 
 // resolveX pushes the player out of solid colliders on the X axis.
+// One-way platforms are skipped — they never block horizontal movement.
 func (g *pixelQuest) resolveX(dx float64) {
 	if dx == 0 {
 		return
 	}
 	bounds := g.playerBounds()
 	for _, h := range g.world.QueryRect(bounds, physics.LayerWorld) {
+		if h.OneWay {
+			continue
+		}
 		if dx > 0 {
 			g.player.Position.X = h.Bounds.X - playerW
 		} else {
@@ -178,17 +204,34 @@ func (g *pixelQuest) resolveX(dx float64) {
 	}
 }
 
-// resolveY pushes the player out of solid colliders on the Y axis.
-func (g *pixelQuest) resolveY(dy float64) {
+// resolveY pushes the player out of colliders on the Y axis.
+// prevBottom is the player's bottom edge before the Y move — used to detect
+// whether the player was above a one-way platform before landing on it.
+func (g *pixelQuest) resolveY(dy float64, prevBottom float64) {
 	if dy == 0 {
 		return
 	}
 	bounds := g.playerBounds()
 	for _, h := range g.world.QueryRect(bounds, physics.LayerWorld) {
-		if dy > 0 {
-			g.player.Position.Y = h.Bounds.Y - playerH
+		if h.OneWay {
+			// One-way: only block when falling AND player bottom was above
+			// the platform top last frame.
+			if dy > 0 && prevBottom <= h.Bounds.Y {
+				g.player.Position.Y = h.Bounds.Y - playerH
+				g.velocity.Y = 0
+				g.grounded = true
+			}
+			// Moving up or already overlapping from below: pass through.
 		} else {
-			g.player.Position.Y = h.Bounds.Y + h.Bounds.H
+			// Solid: block from both directions.
+			if dy > 0 {
+				g.player.Position.Y = h.Bounds.Y - playerH
+				g.velocity.Y = 0
+				g.grounded = true
+			} else {
+				g.player.Position.Y = h.Bounds.Y + h.Bounds.H
+				g.velocity.Y = 0
+			}
 		}
 	}
 }

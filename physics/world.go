@@ -20,6 +20,7 @@ type Collider struct {
 	Layer   Layer
 	Mask    Layer
 	Trigger bool
+	OneWay  bool // pass-through platform; only blocks downward movement
 }
 
 func (c Collider) CanCollide(other Collider) bool {
