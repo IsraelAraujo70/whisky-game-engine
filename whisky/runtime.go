@@ -23,6 +23,15 @@ type Game interface {
 	Shutdown(ctx *Context) error
 }
 
+// KeyMap maps key names (e.g. "space", "w", "up") to control names used by
+// the input system (e.g. "jump", "move_up"). If nil, a default set of
+// controls is used (w/a/s/d, arrows, space, lshift, enter).
+//
+// Supported key names: letter keys ("a"–"z"), digit keys ("0"–"9"), arrow
+// keys ("up", "down", "left", "right"), and named keys ("space", "enter",
+// "escape", "lshift", "rshift", "lctrl", "rctrl", "tab", "backspace").
+type KeyMap map[string]string
+
 type Config struct {
 	Title         string
 	WindowWidth   int
@@ -36,6 +45,9 @@ type Config struct {
 	ClearColor    geom.Color
 	StartScene    *scene.Scene
 	Headless      bool
+	// KeyMap defines the scancode-to-control mapping for the platform layer.
+	// Nil means use the built-in defaults.
+	KeyMap KeyMap
 }
 
 type Context struct {
@@ -112,7 +124,7 @@ func Run(game Game, cfg Config) (err error) {
 
 	var platform *sdl3.Runtime
 	if !cfg.Headless && os.Getenv("WHISKY_HEADLESS") != "1" {
-		platform, err = sdl3.New(cfg.Title, cfg.WindowWidth, cfg.WindowHeight)
+		platform, err = sdl3.New(cfg.Title, cfg.WindowWidth, cfg.WindowHeight, map[string]string(cfg.KeyMap))
 		if err != nil {
 			return err
 		}
@@ -204,6 +216,22 @@ func withDefaults(cfg Config) Config {
 	}
 	if cfg.ClearColor == (geom.Color{}) {
 		cfg.ClearColor = geom.RGBA(0.08, 0.08, 0.1, 1)
+	}
+
+	if cfg.KeyMap == nil {
+		cfg.KeyMap = KeyMap{
+			"w":         "w",
+			"a":         "a",
+			"s":         "s",
+			"d":         "d",
+			"up":        "up",
+			"down":      "down",
+			"left":      "left",
+			"right":     "right",
+			"space":     "space",
+			"lshift":    "lshift",
+			"enter":     "enter",
+		}
 	}
 
 	return cfg
