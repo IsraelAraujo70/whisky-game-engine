@@ -61,15 +61,15 @@
     "Vulkan instance extension and validation-layer selection based on NativeWindow handles (Win32, X11, Wayland)",
     "Vulkan surface creation and destruction for Win32, X11, and Wayland through the RHI surface contract",
     "SDL3 renderer path removed from whisky.Run and desktop backend selection; desktop rendering now hard-targets the Vulkan track",
-    "Vulkan physical-device discovery, queue-family selection, logical device creation, and swapchain creation through the RHI device/swapchain contracts"
+    "Vulkan physical-device discovery, queue-family selection, logical device creation, and swapchain creation through the RHI device/swapchain contracts",
+    "Desktop runtime backend now boots through native windows plus Vulkan instance/surface/device/swapchain instead of failing early, with texture loading metadata and swapchain resize handling already wired"
   ],
   "remarks": [
     "Long-term engine direction is now explicit in code as well as docs: no SDL3 renderer fallback remains in the runtime; the desktop path is native windows plus Vulkan, with Metal planned later for macOS."
   ],
   "next": [
     "Phase 3: introduce a graphics abstraction (RHI) and implement a Vulkan backend as the first modern renderer path",
-    "Phase 3e: wire native windows + Vulkan instance/device/swapchain into the desktop runtime backend instead of returning an early 'renderer unavailable' error",
-    "Phase 4: port the 2D renderer to the new backend stack (swapchain, sprite batch, virtual resolution, text/debug overlay)",
+    "Phase 4: port the 2D renderer to the new backend stack (swapchain images, command buffers, clear/present, sprite batch, virtual resolution, text/debug overlay)",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",
     "Window resize awareness and virtual-resolution policy",
     "Wayland pointer/mouse support and richer keyboard layout handling (xkbcommon instead of the current minimal evdev mapping)",

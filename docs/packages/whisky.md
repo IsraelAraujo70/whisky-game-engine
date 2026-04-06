@@ -8,6 +8,7 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 |------|---------|
 | `runtime.go` | `Config`, `Context`, `Game`, and `Run()` |
 | `internal/backend/desktop_*.go` | OS-selected desktop backend factories used by the runtime |
+| `internal/backend/vulkan.go` | native desktop backend that boots native windows plus the Vulkan instance/surface/device/swapchain stack |
 | `internal/nativewindow/desktop_*.go` | OS-selected native window factories for future Vulkan/D3D12/Metal integration |
 | `internal/gfx/rhi/*.go` | graphics abstraction contracts that bind future render backends to native window handles |
 | `internal/gfx/vulkan/*.go` | Vulkan backend loader, instance/device/swapchain creation, and native surface creation behind the RHI |
@@ -45,11 +46,11 @@ Run()
   -> Shutdown()
 ```
 
-The SDL3 renderer path has been removed from `whisky.Run`. The native window layer plus Vulkan instance, surface, device, and swapchain paths already exist for Win32, X11, and Wayland, but the runtime still fails early on desktop until that Vulkan stack is wired into the loop and given a real 2D renderer implementation.
+The SDL3 renderer path has been removed from `whisky.Run`. Desktop now boots through the native window layer plus Vulkan instance, surface, device, and swapchain creation for Win32, X11, and Wayland. The remaining gap is the actual 2D renderer implementation: the backend is alive, but `DrawFrame` does not yet rasterize or present the queued draw commands.
 
 ## Virtual Resolution
 
-Virtual resolution remains part of the runtime contract, but the concrete mapping from virtual coordinates to window pixels will move into the Vulkan renderer path instead of SDL's logical-presentation API.
+Virtual resolution remains part of the runtime contract, but the concrete mapping from virtual coordinates to window pixels still needs to move into the Vulkan renderer path.
 
 ## Input Pipeline
 
@@ -71,4 +72,4 @@ Supported key names: letters (`"a"`–`"z"`), digits (`"0"`–`"9"`), arrow keys
 
 ## Rendering
 
-Games queue filled rectangles via `ctx.DrawRect(worldRect, color)`. The Camera2D automatically transforms world coordinates to screen (virtual) coordinates. The next renderer milestone is to consume that draw queue from the Vulkan backend instead of the removed SDL renderer path.
+Games queue filled rectangles via `ctx.DrawRect(worldRect, color)`. The Camera2D automatically transforms world coordinates to screen (virtual) coordinates. The backend already owns a live Vulkan swapchain; the next renderer milestone is to consume that draw queue with command buffers and present it.
