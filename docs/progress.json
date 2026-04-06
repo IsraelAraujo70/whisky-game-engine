@@ -51,14 +51,18 @@
     "Pixel-quest example upgraded with patrolling enemies, player attack hitbox, HP tracking, and contact damage",
     "TargetComponent for sight-based chase behavior and DropComponent for reusable enemy rewards",
     "Runtime backend abstraction via internal/platform interfaces (Platform, Renderer, Backend), decoupling whisky.Run from the concrete SDL3 runtime",
-    "SDL3 promoted to transitional backend implementation of the new runtime abstraction, preserving current behavior while preparing Win32/X11/Wayland + Vulkan/D3D12 backends"
+    "SDL3 promoted to transitional backend implementation of the new runtime abstraction, preserving current behavior while preparing Win32/X11/Wayland + Vulkan/D3D12 backends",
+    "Native window handle contract in internal/platform for future Vulkan, D3D12, X11, and Wayland surface creation",
+    "Initial Win32 native platform backend shell with window creation, event pumping, keyboard polling, resize tracking, and raw HWND/HINSTANCE export",
+    "Cross-platform-safe Win32 backend scaffolding via build tags plus Linux test pass and Windows cross-compilation validation"
   ],
   "remarks": [
     "Long-term engine direction: replace SDL3 as the core runtime dependency with native platform backends plus a renderer architecture built around a dedicated graphics abstraction (RHI), starting with a transitional decoupling phase."
   ],
   "next": [
-    "Phase 2: create native platform backends (Win32 first, then X11/Wayland) for windowing, events, input, and native surface handles",
     "Phase 3: introduce a graphics abstraction (RHI) and implement a Vulkan backend as the first modern renderer path",
+    "Phase 3a: define the swapchain/surface contract that binds gfx backends to NativeWindow handles",
+    "Finish Phase 2 on Linux with X11 native platform backend, then add Wayland support",
     "Phase 4: port the 2D renderer to the new backend stack (swapchain, sprite batch, virtual resolution, text/debug overlay)",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",
     "Window resize awareness and virtual-resolution policy",
