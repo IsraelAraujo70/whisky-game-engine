@@ -10,7 +10,7 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 | `internal/backend/desktop_*.go` | OS-selected desktop backend factories used by the runtime |
 | `internal/nativewindow/desktop_*.go` | OS-selected native window factories for future Vulkan/D3D12/Metal integration |
 | `internal/gfx/rhi/*.go` | graphics abstraction contracts that bind future render backends to native window handles |
-| `internal/gfx/vulkan/*.go` | Vulkan backend loader, instance creation, and native surface creation behind the RHI |
+| `internal/gfx/vulkan/*.go` | Vulkan backend loader, instance/device/swapchain creation, and native surface creation behind the RHI |
 | `internal/platform/platform.go` | backend contracts for native platform and renderer integration |
 
 ## Responsibilities
@@ -45,7 +45,7 @@ Run()
   -> Shutdown()
 ```
 
-The SDL3 renderer path has been removed from `whisky.Run`. The native window layer and Vulkan surface path already exist for Win32, X11, and Wayland, but the runtime will fail early on desktop until Vulkan device, swapchain, and frame presentation are wired into the loop.
+The SDL3 renderer path has been removed from `whisky.Run`. The native window layer plus Vulkan instance, surface, device, and swapchain paths already exist for Win32, X11, and Wayland, but the runtime still fails early on desktop until that Vulkan stack is wired into the loop and given a real 2D renderer implementation.
 
 ## Virtual Resolution
 

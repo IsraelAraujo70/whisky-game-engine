@@ -37,8 +37,22 @@ func loadDefaultAPI() (*vulkanAPI, error) {
 			defaultAPIErr = err
 			return
 		}
+		tryRegisterProc(dll, "vkEnumeratePhysicalDevices", &api.enumeratePhysicalDevices)
+		tryRegisterProc(dll, "vkGetPhysicalDeviceProperties", &api.getPhysicalDeviceProperties)
+		tryRegisterProc(dll, "vkGetPhysicalDeviceQueueFamilyProperties", &api.getPhysicalDeviceQueueFamilyProperties)
+		tryRegisterProc(dll, "vkEnumerateDeviceExtensionProperties", &api.enumerateDeviceExtensionProperties)
+		tryRegisterProc(dll, "vkGetPhysicalDeviceSurfaceSupportKHR", &api.getPhysicalDeviceSurfaceSupportKHR)
+		tryRegisterProc(dll, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR", &api.getPhysicalDeviceSurfaceCapabilitiesKHR)
+		tryRegisterProc(dll, "vkGetPhysicalDeviceSurfaceFormatsKHR", &api.getPhysicalDeviceSurfaceFormatsKHR)
+		tryRegisterProc(dll, "vkGetPhysicalDeviceSurfacePresentModesKHR", &api.getPhysicalDeviceSurfacePresentModesKHR)
+		tryRegisterProc(dll, "vkCreateDevice", &api.createDevice)
+		tryRegisterProc(dll, "vkDestroyDevice", &api.destroyDevice)
+		tryRegisterProc(dll, "vkGetDeviceQueue", &api.getDeviceQueue)
+		tryRegisterProc(dll, "vkDeviceWaitIdle", &api.deviceWaitIdle)
 		tryRegisterProc(dll, "vkCreateWin32SurfaceKHR", &api.createWin32SurfaceKHR)
 		tryRegisterProc(dll, "vkDestroySurfaceKHR", &api.destroySurfaceKHR)
+		tryRegisterProc(dll, "vkCreateSwapchainKHR", &api.createSwapchainKHR)
+		tryRegisterProc(dll, "vkDestroySwapchainKHR", &api.destroySwapchainKHR)
 		defaultAPI = api
 	})
 	return defaultAPI, defaultAPIErr

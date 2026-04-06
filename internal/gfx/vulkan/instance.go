@@ -10,13 +10,20 @@ import (
 )
 
 var (
-	ErrUnavailable        = errors.New("vulkan: loader unavailable")
-	ErrMissingExtension   = errors.New("vulkan: required instance extension unavailable")
-	ErrMissingLayer       = errors.New("vulkan: required validation layer unavailable")
-	ErrCreateInstance     = errors.New("vulkan: failed to create instance")
-	ErrCreateSurface      = errors.New("vulkan: failed to create surface")
-	ErrNotImplemented     = errors.New("vulkan: feature not implemented yet")
-	ErrSurfaceUnsupported = errors.New("vulkan: surface creation is not implemented yet")
+	ErrUnavailable            = errors.New("vulkan: loader unavailable")
+	ErrMissingExtension       = errors.New("vulkan: required instance extension unavailable")
+	ErrMissingDeviceExtension = errors.New("vulkan: required device extension unavailable")
+	ErrMissingLayer           = errors.New("vulkan: required validation layer unavailable")
+	ErrCreateInstance         = errors.New("vulkan: failed to create instance")
+	ErrCreateSurface          = errors.New("vulkan: failed to create surface")
+	ErrCreateDevice           = errors.New("vulkan: failed to create logical device")
+	ErrCreateSwapchain        = errors.New("vulkan: failed to create swapchain")
+	ErrNoPhysicalDevice       = errors.New("vulkan: no physical devices available")
+	ErrNoSuitableDevice       = errors.New("vulkan: no suitable physical device found")
+	ErrNoQueueFamily          = errors.New("vulkan: no compatible queue family found")
+	ErrDeviceWaitIdle         = errors.New("vulkan: failed to wait for device idle")
+	ErrNotImplemented         = errors.New("vulkan: feature not implemented yet")
+	ErrSurfaceUnsupported     = errors.New("vulkan: surface creation is not implemented yet")
 )
 
 const (
@@ -79,14 +86,28 @@ type vkLayerProperties struct {
 }
 
 type vulkanAPI struct {
-	enumerateInstanceExtensionProperties func(layerName *byte, propertyCount *uint32, properties *vkExtensionProperties) vkResult
-	enumerateInstanceLayerProperties     func(propertyCount *uint32, properties *vkLayerProperties) vkResult
-	createInstance                       func(createInfo *vkInstanceCreateInfo, allocator unsafe.Pointer, instance *vkInstance) vkResult
-	destroyInstance                      func(instance vkInstance, allocator unsafe.Pointer)
-	createWin32SurfaceKHR                func(instance vkInstance, createInfo *vkWin32SurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
-	createXlibSurfaceKHR                 func(instance vkInstance, createInfo *vkXlibSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
-	createWaylandSurfaceKHR              func(instance vkInstance, createInfo *vkWaylandSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
-	destroySurfaceKHR                    func(instance vkInstance, surface vkSurfaceKHR, allocator unsafe.Pointer)
+	enumerateInstanceExtensionProperties    func(layerName *byte, propertyCount *uint32, properties *vkExtensionProperties) vkResult
+	enumerateInstanceLayerProperties        func(propertyCount *uint32, properties *vkLayerProperties) vkResult
+	createInstance                          func(createInfo *vkInstanceCreateInfo, allocator unsafe.Pointer, instance *vkInstance) vkResult
+	destroyInstance                         func(instance vkInstance, allocator unsafe.Pointer)
+	enumeratePhysicalDevices                func(instance vkInstance, physicalDeviceCount *uint32, physicalDevices *vkPhysicalDevice) vkResult
+	getPhysicalDeviceProperties             func(physicalDevice vkPhysicalDevice, properties unsafe.Pointer)
+	getPhysicalDeviceQueueFamilyProperties  func(physicalDevice vkPhysicalDevice, queueFamilyPropertyCount *uint32, queueFamilyProperties *vkQueueFamilyProperties)
+	enumerateDeviceExtensionProperties      func(physicalDevice vkPhysicalDevice, layerName *byte, propertyCount *uint32, properties *vkExtensionProperties) vkResult
+	getPhysicalDeviceSurfaceSupportKHR      func(physicalDevice vkPhysicalDevice, queueFamilyIndex uint32, surface vkSurfaceKHR, supported *uint32) vkResult
+	getPhysicalDeviceSurfaceCapabilitiesKHR func(physicalDevice vkPhysicalDevice, surface vkSurfaceKHR, surfaceCapabilities *vkSurfaceCapabilitiesKHR) vkResult
+	getPhysicalDeviceSurfaceFormatsKHR      func(physicalDevice vkPhysicalDevice, surface vkSurfaceKHR, surfaceFormatCount *uint32, surfaceFormats *vkSurfaceFormatKHR) vkResult
+	getPhysicalDeviceSurfacePresentModesKHR func(physicalDevice vkPhysicalDevice, surface vkSurfaceKHR, presentModeCount *uint32, presentModes *int32) vkResult
+	createDevice                            func(physicalDevice vkPhysicalDevice, createInfo *vkDeviceCreateInfo, allocator unsafe.Pointer, device *vkDevice) vkResult
+	destroyDevice                           func(device vkDevice, allocator unsafe.Pointer)
+	getDeviceQueue                          func(device vkDevice, queueFamilyIndex uint32, queueIndex uint32, queue *vkQueue)
+	deviceWaitIdle                          func(device vkDevice) vkResult
+	createWin32SurfaceKHR                   func(instance vkInstance, createInfo *vkWin32SurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
+	createXlibSurfaceKHR                    func(instance vkInstance, createInfo *vkXlibSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
+	createWaylandSurfaceKHR                 func(instance vkInstance, createInfo *vkWaylandSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
+	destroySurfaceKHR                       func(instance vkInstance, surface vkSurfaceKHR, allocator unsafe.Pointer)
+	createSwapchainKHR                      func(device vkDevice, createInfo *vkSwapchainCreateInfoKHR, allocator unsafe.Pointer, swapchain *vkSwapchainKHR) vkResult
+	destroySwapchainKHR                     func(device vkDevice, swapchain vkSwapchainKHR, allocator unsafe.Pointer)
 }
 
 type instance struct {
@@ -131,10 +152,6 @@ func newInstanceWithAPI(api *vulkanAPI, opts Options) (rhi.Instance, error) {
 
 func (i *instance) Backend() rhi.BackendKind {
 	return rhi.BackendKindVulkan
-}
-
-func (i *instance) CreateDevice(surface rhi.Surface, opts rhi.DeviceOptions) (rhi.Device, error) {
-	return nil, ErrNotImplemented
 }
 
 func (i *instance) Destroy() error {
