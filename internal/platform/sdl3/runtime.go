@@ -7,8 +7,11 @@ import (
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
+	platformapi "github.com/IsraelAraujo70/whisky-game-engine/internal/platform"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
 )
+
+var _ platformapi.Backend = (*Runtime)(nil)
 
 // keyBinding associates an SDL scancode with a control name fed into the
 // input system.

@@ -10,7 +10,8 @@ import (
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
-	"github.com/IsraelAraujo70/whisky-game-engine/internal/platform/sdl3"
+	backendapi "github.com/IsraelAraujo70/whisky-game-engine/internal/backend"
+	platformapi "github.com/IsraelAraujo70/whisky-game-engine/internal/platform"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
 )
@@ -65,7 +66,8 @@ type Context struct {
 	logger *log.Logger
 	quit   bool
 
-	platform   *sdl3.Runtime
+	platform   platformapi.Platform
+	renderer   platformapi.Renderer
 	debugLines []string
 	drawCmds   []render.DrawCmd
 	texSeq     render.TextureID
@@ -88,11 +90,11 @@ func (c *Context) SetDebugText(lines ...string) {
 }
 
 func (c *Context) LoadTexture(path string) (render.TextureID, int, int, error) {
-	if c.platform == nil {
+	if c.renderer == nil {
 		c.texSeq++
 		return c.texSeq, 0, 0, nil
 	}
-	return c.platform.LoadTexture(path)
+	return c.renderer.LoadTexture(path)
 }
 
 func (c *Context) VirtualSize() (w, h float64) {
@@ -170,24 +172,25 @@ func Run(game Game, cfg Config) (err error) {
 		ctx.Scene = scene.New(cfg.Title)
 	}
 
-	var platform *sdl3.Runtime
+	var backend platformapi.Backend
 	if !cfg.Headless && os.Getenv("WHISKY_HEADLESS") != "1" {
-		platform, err = sdl3.New(cfg.Title, cfg.WindowWidth, cfg.WindowHeight, map[string]string(cfg.KeyMap))
+		backend, err = backendapi.NewDesktop(cfg.Title, cfg.WindowWidth, cfg.WindowHeight, map[string]string(cfg.KeyMap))
 		if err != nil {
 			return err
 		}
-		if err = platform.SetLogicalSize(cfg.VirtualWidth, cfg.VirtualHeight, cfg.PixelPerfect); err != nil {
-			_ = platform.Destroy()
+		if err = backend.SetLogicalSize(cfg.VirtualWidth, cfg.VirtualHeight, cfg.PixelPerfect); err != nil {
+			_ = backend.Destroy()
 			return err
 		}
 		defer func() {
-			destroyErr := platform.Destroy()
+			destroyErr := backend.Destroy()
 			if err == nil {
 				err = destroyErr
 			}
 		}()
 	}
-	ctx.platform = platform
+	ctx.platform = backend
+	ctx.renderer = backend
 
 	if err := game.Load(ctx); err != nil {
 		return err
@@ -204,9 +207,9 @@ func Run(game Game, cfg Config) (err error) {
 	defer ticker.Stop()
 
 	for {
-		if platform != nil {
-			platform.UpdateInput(ctx.Input)
-			if platform.PumpEvents() {
+		if ctx.platform != nil {
+			ctx.platform.UpdateInput(ctx.Input)
+			if ctx.platform.PumpEvents() {
 				ctx.Quit()
 			}
 		}
@@ -233,8 +236,8 @@ func Run(game Game, cfg Config) (err error) {
 
 		ctx.Scene.Draw(ctx)
 
-		if platform != nil {
-			if err := platform.DrawFrame(ctx.Config.ClearColor, ctx.drawCmds, ctx.overlayLines()); err != nil {
+		if ctx.renderer != nil {
+			if err := ctx.renderer.DrawFrame(ctx.Config.ClearColor, ctx.drawCmds, ctx.overlayLines()); err != nil {
 				return err
 			}
 		}
@@ -271,17 +274,17 @@ func withDefaults(cfg Config) Config {
 
 	if cfg.KeyMap == nil {
 		cfg.KeyMap = KeyMap{
-			"w":     "move_up",
-			"up":    "move_up",
-			"s":     "move_down",
-			"down":  "move_down",
-			"a":     "move_left",
-			"left":  "move_left",
-			"d":     "move_right",
-			"right": "move_right",
-			"space": "action",
+			"w":      "move_up",
+			"up":     "move_up",
+			"s":      "move_down",
+			"down":   "move_down",
+			"a":      "move_left",
+			"left":   "move_left",
+			"d":      "move_right",
+			"right":  "move_right",
+			"space":  "action",
 			"lshift": "sprint",
-			"enter": "confirm",
+			"enter":  "confirm",
 		}
 	}
 

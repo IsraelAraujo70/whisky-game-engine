@@ -7,18 +7,21 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 | File | Purpose |
 |------|---------|
 | `runtime.go` | `Config`, `Context`, `Game`, and `Run()` |
-| `internal/platform/sdl3/runtime.go` | SDL3 window bootstrap, event pump, input polling, and 2D rendering |
+| `internal/backend/desktop.go` | default desktop backend factory used by the runtime |
+| `internal/platform/platform.go` | backend contracts for native platform and renderer integration |
+| `internal/platform/sdl3/runtime.go` | transitional SDL3 backend implementing both platform and renderer responsibilities |
 
 ## Responsibilities
 
 - normalize runtime configuration
 - lock the main goroutine to the OS thread
 - create a `Context` with Camera2D, Input, and Scene
-- create a native SDL3 window with virtual resolution scaling
-- poll keyboard state and feed it into the input system each frame
+- bind the runtime to an internal backend contract rather than a concrete native implementation
+- create a native window with virtual resolution scaling
+- poll native input state and feed it into the input system each frame
 - execute `Load`, `Update`, and `Shutdown` in a predictable order
 - advance the active scene each frame
-- collect draw commands (`DrawRect`) and present them via SDL3
+- collect draw commands (`DrawRect`) and present them via the active renderer backend
 - provide a simple shutdown mechanism through `Context.Quit()`
 
 ## Current Loop
@@ -27,17 +30,20 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 Run()
   -> defaults
   -> Context (with Camera2D at virtual center)
-  -> SDL3 window + renderer + SetLogicalPresentation
+  -> create backend
+  -> backend.SetLogicalSize(...)
   -> Load()
   -> repeat until quit or max frames:
-       UpdateInput (keyboard state -> input.State)
+       backend.UpdateInput(...)
        Pump native events
        Scene.Update(dt)
        Game.Update(dt)     // game calls ctx.DrawRect() here
-       DrawFrame (clear + filled rects + debug text)
+       backend.DrawFrame(...)
        Reset draw queue
   -> Shutdown()
 ```
+
+At the moment the only backend is SDL3, but `whisky.Run` no longer depends on the concrete `sdl3.Runtime` type. This is the first step toward native platform backends plus Vulkan and D3D12 render paths.
 
 ## Virtual Resolution
 
