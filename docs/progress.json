@@ -54,7 +54,10 @@
     "SDL3 promoted to transitional backend implementation of the new runtime abstraction, preserving current behavior while preparing Win32/X11/Wayland + Vulkan/D3D12 backends",
     "Native window handle contract in internal/platform for future Vulkan, D3D12, X11, and Wayland surface creation",
     "Initial Win32 native platform backend shell with window creation, event pumping, keyboard polling, resize tracking, and raw HWND/HINSTANCE export",
-    "Cross-platform-safe Win32 backend scaffolding via build tags plus Linux test pass and Windows cross-compilation validation"
+    "Cross-platform-safe Win32 backend scaffolding via build tags plus Linux test pass and Windows cross-compilation validation",
+    "Initial X11 native platform backend with Xlib window creation through purego, event pumping, resize tracking, key name to keysym/keycode resolution, and raw Display*/Window export",
+    "Wayland platform package scaffolded as a future native backend target, with explicit not-implemented status instead of SDL fallback behavior",
+    "Separate native-window desktop factory with OS-specific selection logic, including Linux X11/Wayland preference handling for future RHI-backed renderers"
   ],
   "remarks": [
     "Long-term engine direction: replace SDL3 as the core runtime dependency with native platform backends plus a renderer architecture built around a dedicated graphics abstraction (RHI), starting with a transitional decoupling phase."
@@ -62,7 +65,7 @@
   "next": [
     "Phase 3: introduce a graphics abstraction (RHI) and implement a Vulkan backend as the first modern renderer path",
     "Phase 3a: define the swapchain/surface contract that binds gfx backends to NativeWindow handles",
-    "Finish Phase 2 on Linux with X11 native platform backend, then add Wayland support",
+    "Finish Phase 2 on Linux by implementing Wayland window creation, event dispatch, keyboard integration, and wl_display/wl_surface export",
     "Phase 4: port the 2D renderer to the new backend stack (swapchain, sprite batch, virtual resolution, text/debug overlay)",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",
     "Window resize awareness and virtual-resolution policy",

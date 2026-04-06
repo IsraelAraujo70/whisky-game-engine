@@ -7,7 +7,8 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 | File | Purpose |
 |------|---------|
 | `runtime.go` | `Config`, `Context`, `Game`, and `Run()` |
-| `internal/backend/desktop.go` | default desktop backend factory used by the runtime |
+| `internal/backend/desktop_*.go` | OS-selected desktop backend factories used by the runtime |
+| `internal/nativewindow/desktop_*.go` | OS-selected native window factories for future Vulkan/D3D12/Metal integration |
 | `internal/platform/platform.go` | backend contracts for native platform and renderer integration |
 | `internal/platform/sdl3/runtime.go` | transitional SDL3 backend implementing both platform and renderer responsibilities |
 

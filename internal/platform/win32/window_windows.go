@@ -219,19 +219,24 @@ func (w *Window) NativeHandle() platformapi.NativeWindowHandle {
 }
 
 func (w *Window) Destroy() error {
-	if w == nil || w.hwnd == 0 {
+	if w == nil {
+		return nil
+	}
+
+	hwnd := w.hwnd
+	if hwnd == 0 {
+		w.closed.Store(true)
 		return nil
 	}
 
 	windowsMu.Lock()
-	delete(windowsByHandle, w.hwnd)
+	delete(windowsByHandle, hwnd)
 	windowsMu.Unlock()
 
-	hwnd := uintptr(w.hwnd)
 	w.hwnd = 0
 	w.closed.Store(true)
 
-	ret, _, callErr := procDestroyWindow.Call(hwnd)
+	ret, _, callErr := procDestroyWindow.Call(uintptr(hwnd))
 	if ret == 0 {
 		return wrapCallErr("DestroyWindow", callErr)
 	}
@@ -279,6 +284,7 @@ func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	case wmDestroy:
 		windowsMu.Lock()
 		if window, ok := windowsByHandle[windows.Handle(hwnd)]; ok {
+			window.hwnd = 0
 			window.closed.Store(true)
 			delete(windowsByHandle, windows.Handle(hwnd))
 		}
