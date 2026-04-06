@@ -210,10 +210,18 @@ var (
 		Version: 1,
 	}
 
+	xdgWmBaseCreatePositionerTypes = [...]*wlInterface{
+		nil,
+	}
+	xdgWmBaseGetSurfaceTypes = [...]*wlInterface{
+		nil,
+		wlSurfaceInterface,
+	}
+
 	xdgWmBaseMethods = [...]wlMessage{
 		{Name: &cXDGWMBaseDestroyName[0], Signature: &cEmpty[0]},
-		{Name: &cXDGWMBasePositionerName[0], Signature: &cNewIDSig[0]},
-		{Name: &cXDGWMBaseSurfaceName[0], Signature: &cNewIDObjectSig[0]},
+		{Name: &cXDGWMBasePositionerName[0], Signature: &cNewIDSig[0], Types: (**wlInterface)(unsafe.Pointer(&xdgWmBaseCreatePositionerTypes[0]))},
+		{Name: &cXDGWMBaseSurfaceName[0], Signature: &cNewIDObjectSig[0], Types: (**wlInterface)(unsafe.Pointer(&xdgWmBaseGetSurfaceTypes[0]))},
 		{Name: &cXDGWMBasePongName[0], Signature: &cUintSig[0]},
 	}
 	xdgWmBaseEvents = [...]wlMessage{
@@ -228,10 +236,19 @@ var (
 		Events:      &xdgWmBaseEvents[0],
 	}
 
+	xdgSurfaceGetToplevelTypes = [...]*wlInterface{
+		nil,
+	}
+	xdgSurfaceGetPopupTypes = [...]*wlInterface{
+		nil,
+		nil,
+		&xdgPositionerInterface,
+	}
+
 	xdgSurfaceMethods = [...]wlMessage{
 		{Name: &cXDGSurfaceDestroyName[0], Signature: &cEmpty[0]},
-		{Name: &cXDGSurfaceGetToplevelName[0], Signature: &cNewIDSig[0]},
-		{Name: &cXDGSurfaceGetPopupName[0], Signature: &cNewIDObjectObjectSig[0]},
+		{Name: &cXDGSurfaceGetToplevelName[0], Signature: &cNewIDSig[0], Types: (**wlInterface)(unsafe.Pointer(&xdgSurfaceGetToplevelTypes[0]))},
+		{Name: &cXDGSurfaceGetPopupName[0], Signature: &cNewIDObjectObjectSig[0], Types: (**wlInterface)(unsafe.Pointer(&xdgSurfaceGetPopupTypes[0]))},
 		{Name: &cXDGSurfaceSetGeometryName[0], Signature: &cIntIntIntIntSig[0]},
 		{Name: &cXDGSurfaceAckConfigureName[0], Signature: &cUintSig[0]},
 	}
@@ -545,6 +562,8 @@ func ensureWayland() error {
 			waylandErr = err
 			return
 		}
+		xdgWmBaseGetSurfaceTypes[1] = wlSurfaceInterface
+		xdgSurfaceGetPopupTypes[1] = &xdgSurfaceInterface
 		wlSeatInterface, err = loadInterface(handle, "wl_seat_interface")
 		if err != nil {
 			waylandErr = err

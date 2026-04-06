@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/internal/gfx/rhi"
+	platformapi "github.com/IsraelAraujo70/whisky-game-engine/internal/platform"
 )
 
 const (
@@ -144,8 +145,21 @@ func (s *swapchain) Resize(width, height int) error {
 
 	newDesc := s.desc
 	newDesc.Extent = rhi.Extent2D{Width: width, Height: height}
-	createInfoDesc, createInfo, err := s.device.buildSwapchainCreateInfo(s.device.surface, newDesc, s.handle)
+	oldSwapchain := s.handle
+	if s.requiresDestructiveResize() {
+		if err := s.device.WaitIdle(); err != nil {
+			return err
+		}
+		s.api.destroySwapchainKHR(s.device.handle, oldSwapchain, nil)
+		s.handle = 0
+		oldSwapchain = 0
+	}
+
+	createInfoDesc, createInfo, err := s.device.buildSwapchainCreateInfo(s.device.surface, newDesc, oldSwapchain)
 	if err != nil {
+		if s.handle == 0 {
+			s.handle = oldSwapchain
+		}
 		return err
 	}
 
@@ -153,13 +167,25 @@ func (s *swapchain) Resize(width, height int) error {
 	result := s.api.createSwapchainKHR(s.device.handle, &createInfo, nil, &next)
 	runtime.KeepAlive(createInfo)
 	if result != vkSuccess {
+		if s.handle == 0 {
+			s.handle = oldSwapchain
+		}
 		return fmt.Errorf("%w: %s", ErrCreateSwapchain, result)
 	}
 
-	s.api.destroySwapchainKHR(s.device.handle, s.handle, nil)
+	if s.handle != 0 {
+		s.api.destroySwapchainKHR(s.device.handle, s.handle, nil)
+	}
 	s.handle = next
 	s.desc = createInfoDesc
 	return nil
+}
+
+func (s *swapchain) requiresDestructiveResize() bool {
+	return s != nil &&
+		s.device != nil &&
+		s.device.surface != nil &&
+		s.device.surface.target.Window.Kind == platformapi.NativeWindowKindWayland
 }
 
 func (s *swapchain) Destroy() error {
