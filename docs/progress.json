@@ -46,7 +46,10 @@
     "physics.Collider.OneWay field for pass-through platforms; set automatically by GenerateColliders",
     "Config.GravityY: configurable downward acceleration (px/s²), default 0 (backwards-compatible)",
     "Platformer physics in pixel-quest: gravity accumulation, jump impulse, double jump (jumpsLeft), resolveX/resolveY with one-way platform awareness",
-    "Unit and integration tests for gravity, resolveY (solid/one-way/ceiling), and full tilemap→physics→game pipeline"
+    "Unit and integration tests for gravity, resolveY (solid/one-way/ceiling), and full tilemap→physics→game pipeline",
+    "Gameplay package with reusable Health component, overlap-based damage resolution, and PatrolComponent AI",
+    "Pixel-quest example upgraded with patrolling enemies, player attack hitbox, HP tracking, and contact damage",
+    "TargetComponent for sight-based chase behavior and DropComponent for reusable enemy rewards"
   ],
   "remarks": [],
   "next": [
@@ -58,6 +61,7 @@
   ],
   "public_packages": [
     "geom",
+    "gameplay",
     "input",
     "physics",
     "render",

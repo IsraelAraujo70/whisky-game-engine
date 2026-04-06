@@ -2,8 +2,10 @@ package game
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 
+	"github.com/IsraelAraujo70/whisky-game-engine/gameplay"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
@@ -327,5 +329,128 @@ func TestIntegration_TriggerTileDetected(t *testing.T) {
 	}
 	if !hits[0].Trigger {
 		t.Fatal("expected Trigger=true on hit collider")
+	}
+}
+
+func TestCombat_PlayerAttackDamagesEnemy(t *testing.T) {
+	g := newGame(40, 80)
+	g.playerFacing = 1
+	g.playerHealth = gameplay.NewHealth(playerMaxHP)
+	g.attackTimer = playerAttackDuration
+
+	enemyNode := scene.NewNode("enemy")
+	enemyNode.Position = geom.Vec2{X: 48, Y: 82}
+	enemyHealth := gameplay.NewHealth(2)
+	g.enemies = []*enemy{
+		{
+			id:     "enemy:test",
+			node:   enemyNode,
+			patrol: &gameplay.PatrolComponent{},
+			health: enemyHealth,
+		},
+	}
+
+	events := gameplay.ResolveDamage(g.damageSources(), g.damageTargets())
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 damage event, got %d", len(events))
+	}
+	if enemyHealth.Current != 1 {
+		t.Fatalf("expected enemy hp=1 after attack, got %d", enemyHealth.Current)
+	}
+}
+
+func TestCombat_EnemyTouchDamageRespectsInvulnerability(t *testing.T) {
+	g := newGame(40, 80)
+	g.playerHealth = gameplay.NewHealth(playerMaxHP)
+	g.playerHealth.InvulnerableFor = playerInvulnerableFor
+
+	enemyNode := scene.NewNode("enemy")
+	enemyNode.Position = geom.Vec2{X: 40, Y: 80}
+	enemyHealth := gameplay.NewHealth(2)
+	g.enemies = []*enemy{
+		{
+			id:     "enemy:test",
+			node:   enemyNode,
+			patrol: &gameplay.PatrolComponent{},
+			health: enemyHealth,
+		},
+	}
+
+	first := gameplay.ResolveDamage(g.damageSources(), g.damageTargets())
+	second := gameplay.ResolveDamage(g.damageSources(), g.damageTargets())
+
+	if len(first) != 1 {
+		t.Fatalf("expected first contact to damage player once, got %d events", len(first))
+	}
+	if len(second) != 0 {
+		t.Fatalf("expected invulnerability to block immediate second hit, got %d events", len(second))
+	}
+	if g.playerHealth.Current != playerMaxHP-1 {
+		t.Fatalf("expected player hp=%d, got %d", playerMaxHP-1, g.playerHealth.Current)
+	}
+}
+
+func TestEnemyTargetComponentChasesPlayerInSight(t *testing.T) {
+	g := newGame(90, 80)
+	g.playerHealth = gameplay.NewHealth(playerMaxHP)
+	g.rng = rand.New(rand.NewSource(7))
+
+	root := scene.NewNode("root")
+	root.AddChild(g.player)
+	g.spawnEnemy(root, "enemy:test", 60, 80, 50, 70, 2, 20, nil)
+
+	enemy := g.enemies[0]
+	startX := enemy.node.Position.X
+
+	if err := enemy.target.Update(enemy.node, 1); err != nil {
+		t.Fatalf("unexpected update error: %v", err)
+	}
+
+	if !enemy.target.Chasing {
+		t.Fatal("expected enemy to chase player in sight")
+	}
+	if enemy.node.Position.X <= startX {
+		t.Fatalf("expected enemy to move toward player, got start=%.2f current=%.2f", startX, enemy.node.Position.X)
+	}
+}
+
+func TestEnemyDropsRollOnDeath(t *testing.T) {
+	g := newGame(40, 80)
+	g.playerFacing = 1
+	g.playerHealth = gameplay.NewHealth(playerMaxHP)
+	g.attackTimer = playerAttackDuration
+	g.rng = rand.New(rand.NewSource(3))
+
+	enemyNode := scene.NewNode("enemy")
+	enemyNode.Position = geom.Vec2{X: 48, Y: 82}
+	enemyHealth := gameplay.NewHealth(1)
+	drops := &gameplay.DropComponent{
+		Entries: []gameplay.DropEntry{
+			{Kind: "xp", MinAmount: 1, MaxAmount: 1, Chance: 1},
+		},
+	}
+	g.enemies = []*enemy{
+		{
+			id:     "enemy:test",
+			node:   enemyNode,
+			patrol: &gameplay.PatrolComponent{},
+			target: &gameplay.TargetComponent{},
+			health: enemyHealth,
+			drops:  drops,
+		},
+	}
+
+	events := gameplay.ResolveDamage(g.damageSources(), g.damageTargets())
+	if len(events) != 1 {
+		t.Fatalf("expected 1 damage event, got %d", len(events))
+	}
+
+	rolled := drops.Roll(g.rng)
+	if len(rolled) != 1 {
+		t.Fatalf("expected 1 drop, got %d", len(rolled))
+	}
+	if rolled[0].Kind != "xp" || rolled[0].Amount != 1 {
+		t.Fatalf("unexpected drop: %+v", rolled[0])
 	}
 }

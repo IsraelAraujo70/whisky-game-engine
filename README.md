@@ -8,6 +8,7 @@ This repository is bootstrapped with:
 
 - an SDL3-backed runtime loop in [`whisky`](./whisky)
 - foundational packages for [`geom`](./geom), [`scene`](./scene), [`input`](./input), and [`physics`](./physics)
+- reusable gameplay primitives in [`gameplay`](./gameplay) for health, damage, and basic patrol AI
 - a CLI in [`cmd/whisky`](./cmd/whisky) with `new`, `run`, and `doctor`
 - an internal project template system
 - a sample game in [`examples/pixel-quest`](./examples/pixel-quest)
