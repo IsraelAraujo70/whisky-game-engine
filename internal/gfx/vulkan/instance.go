@@ -18,6 +18,27 @@ var (
 	ErrCreateSurface          = errors.New("vulkan: failed to create surface")
 	ErrCreateDevice           = errors.New("vulkan: failed to create logical device")
 	ErrCreateSwapchain        = errors.New("vulkan: failed to create swapchain")
+	ErrCreateImageView        = errors.New("vulkan: failed to create image view")
+	ErrCreateRenderPass       = errors.New("vulkan: failed to create render pass")
+	ErrCreateFramebuffer      = errors.New("vulkan: failed to create framebuffer")
+	ErrCreateCommandPool      = errors.New("vulkan: failed to create command pool")
+	ErrAllocateCommandBuffer  = errors.New("vulkan: failed to allocate command buffer")
+	ErrCreateSemaphore        = errors.New("vulkan: failed to create semaphore")
+	ErrCreateFence            = errors.New("vulkan: failed to create fence")
+	ErrCreateShaderModule     = errors.New("vulkan: failed to create shader module")
+	ErrCreatePipelineLayout   = errors.New("vulkan: failed to create pipeline layout")
+	ErrCreatePipeline         = errors.New("vulkan: failed to create pipeline")
+	ErrCreateDescriptorLayout = errors.New("vulkan: failed to create descriptor set layout")
+	ErrCreateDescriptorPool   = errors.New("vulkan: failed to create descriptor pool")
+	ErrAllocateDescriptorSet  = errors.New("vulkan: failed to allocate descriptor set")
+	ErrCreateSampler          = errors.New("vulkan: failed to create sampler")
+	ErrCreateBuffer           = errors.New("vulkan: failed to create buffer")
+	ErrAllocateMemory         = errors.New("vulkan: failed to allocate device memory")
+	ErrCreateImage            = errors.New("vulkan: failed to create image")
+	ErrMapMemory              = errors.New("vulkan: failed to map device memory")
+	ErrAcquireImage           = errors.New("vulkan: failed to acquire swapchain image")
+	ErrQueueSubmit            = errors.New("vulkan: failed to submit queue work")
+	ErrPresent                = errors.New("vulkan: failed to present swapchain image")
 	ErrNoPhysicalDevice       = errors.New("vulkan: no physical devices available")
 	ErrNoSuitableDevice       = errors.New("vulkan: no suitable physical device found")
 	ErrNoQueueFamily          = errors.New("vulkan: no compatible queue family found")
@@ -93,6 +114,7 @@ type vulkanAPI struct {
 	enumeratePhysicalDevices                func(instance vkInstance, physicalDeviceCount *uint32, physicalDevices *vkPhysicalDevice) vkResult
 	getPhysicalDeviceProperties             func(physicalDevice vkPhysicalDevice, properties unsafe.Pointer)
 	getPhysicalDeviceQueueFamilyProperties  func(physicalDevice vkPhysicalDevice, queueFamilyPropertyCount *uint32, queueFamilyProperties *vkQueueFamilyProperties)
+	getPhysicalDeviceMemoryProperties       func(physicalDevice vkPhysicalDevice, memoryProperties *vkPhysicalDeviceMemoryProperties)
 	enumerateDeviceExtensionProperties      func(physicalDevice vkPhysicalDevice, layerName *byte, propertyCount *uint32, properties *vkExtensionProperties) vkResult
 	getPhysicalDeviceSurfaceSupportKHR      func(physicalDevice vkPhysicalDevice, queueFamilyIndex uint32, surface vkSurfaceKHR, supported *uint32) vkResult
 	getPhysicalDeviceSurfaceCapabilitiesKHR func(physicalDevice vkPhysicalDevice, surface vkSurfaceKHR, surfaceCapabilities *vkSurfaceCapabilitiesKHR) vkResult
@@ -108,6 +130,66 @@ type vulkanAPI struct {
 	destroySurfaceKHR                       func(instance vkInstance, surface vkSurfaceKHR, allocator unsafe.Pointer)
 	createSwapchainKHR                      func(device vkDevice, createInfo *vkSwapchainCreateInfoKHR, allocator unsafe.Pointer, swapchain *vkSwapchainKHR) vkResult
 	destroySwapchainKHR                     func(device vkDevice, swapchain vkSwapchainKHR, allocator unsafe.Pointer)
+	getSwapchainImagesKHR                   func(device vkDevice, swapchain vkSwapchainKHR, count *uint32, images *vkImage) vkResult
+	acquireNextImageKHR                     func(device vkDevice, swapchain vkSwapchainKHR, timeout uint64, semaphore vkSemaphore, fence vkFence, imageIndex *uint32) vkResult
+	queuePresentKHR                         func(queue vkQueue, presentInfo *vkPresentInfoKHR) vkResult
+	queueSubmit                             func(queue vkQueue, submitCount uint32, submits *vkSubmitInfo, fence vkFence) vkResult
+	queueWaitIdle                           func(queue vkQueue) vkResult
+	createImageView                         func(device vkDevice, createInfo *vkImageViewCreateInfo, allocator unsafe.Pointer, imageView *vkImageView) vkResult
+	destroyImageView                        func(device vkDevice, imageView vkImageView, allocator unsafe.Pointer)
+	createRenderPass                        func(device vkDevice, createInfo *vkRenderPassCreateInfo, allocator unsafe.Pointer, renderPass *vkRenderPass) vkResult
+	destroyRenderPass                       func(device vkDevice, renderPass vkRenderPass, allocator unsafe.Pointer)
+	createFramebuffer                       func(device vkDevice, createInfo *vkFramebufferCreateInfo, allocator unsafe.Pointer, framebuffer *vkFramebuffer) vkResult
+	destroyFramebuffer                      func(device vkDevice, framebuffer vkFramebuffer, allocator unsafe.Pointer)
+	createSemaphore                         func(device vkDevice, createInfo *vkSemaphoreCreateInfo, allocator unsafe.Pointer, semaphore *vkSemaphore) vkResult
+	destroySemaphore                        func(device vkDevice, semaphore vkSemaphore, allocator unsafe.Pointer)
+	createFence                             func(device vkDevice, createInfo *vkFenceCreateInfo, allocator unsafe.Pointer, fence *vkFence) vkResult
+	destroyFence                            func(device vkDevice, fence vkFence, allocator unsafe.Pointer)
+	waitForFences                           func(device vkDevice, fenceCount uint32, fences *vkFence, waitAll uint32, timeout uint64) vkResult
+	resetFences                             func(device vkDevice, fenceCount uint32, fences *vkFence) vkResult
+	createCommandPool                       func(device vkDevice, createInfo *vkCommandPoolCreateInfo, allocator unsafe.Pointer, commandPool *vkCommandPool) vkResult
+	destroyCommandPool                      func(device vkDevice, commandPool vkCommandPool, allocator unsafe.Pointer)
+	allocateCommandBuffers                  func(device vkDevice, createInfo *vkCommandBufferAllocateInfo, commandBuffers *vkCommandBuffer) vkResult
+	freeCommandBuffers                      func(device vkDevice, commandPool vkCommandPool, commandBufferCount uint32, commandBuffers *vkCommandBuffer)
+	beginCommandBuffer                      func(commandBuffer vkCommandBuffer, beginInfo *vkCommandBufferBeginInfo) vkResult
+	endCommandBuffer                        func(commandBuffer vkCommandBuffer) vkResult
+	resetCommandBuffer                      func(commandBuffer vkCommandBuffer, flags uint32) vkResult
+	cmdBeginRenderPass                      func(commandBuffer vkCommandBuffer, beginInfo *vkRenderPassBeginInfo, contents uint32)
+	cmdEndRenderPass                        func(commandBuffer vkCommandBuffer)
+	cmdBindPipeline                         func(commandBuffer vkCommandBuffer, bindPoint uint32, pipeline vkPipeline)
+	cmdSetViewport                          func(commandBuffer vkCommandBuffer, firstViewport uint32, viewportCount uint32, viewports *vkViewport)
+	cmdSetScissor                           func(commandBuffer vkCommandBuffer, firstScissor uint32, scissorCount uint32, scissors *vkRect2D)
+	cmdBindVertexBuffers                    func(commandBuffer vkCommandBuffer, firstBinding uint32, bindingCount uint32, buffers *vkBuffer, offsets *vkDeviceSize)
+	cmdBindDescriptorSets                   func(commandBuffer vkCommandBuffer, bindPoint uint32, layout vkPipelineLayout, firstSet uint32, descriptorSetCount uint32, descriptorSets *vkDescriptorSet, dynamicOffsetCount uint32, dynamicOffsets *uint32)
+	cmdDraw                                 func(commandBuffer vkCommandBuffer, vertexCount uint32, instanceCount uint32, firstVertex uint32, firstInstance uint32)
+	createShaderModule                      func(device vkDevice, createInfo *vkShaderModuleCreateInfo, allocator unsafe.Pointer, shaderModule *vkShaderModule) vkResult
+	destroyShaderModule                     func(device vkDevice, shaderModule vkShaderModule, allocator unsafe.Pointer)
+	createPipelineLayout                    func(device vkDevice, createInfo *vkPipelineLayoutCreateInfo, allocator unsafe.Pointer, layout *vkPipelineLayout) vkResult
+	destroyPipelineLayout                   func(device vkDevice, layout vkPipelineLayout, allocator unsafe.Pointer)
+	createGraphicsPipelines                 func(device vkDevice, cache vkPipelineCache, createInfoCount uint32, createInfos *vkGraphicsPipelineCreateInfo, allocator unsafe.Pointer, pipelines *vkPipeline) vkResult
+	destroyPipeline                         func(device vkDevice, pipeline vkPipeline, allocator unsafe.Pointer)
+	createDescriptorSetLayout               func(device vkDevice, createInfo *vkDescriptorSetLayoutCreateInfo, allocator unsafe.Pointer, setLayout *vkDescriptorSetLayout) vkResult
+	destroyDescriptorSetLayout              func(device vkDevice, setLayout vkDescriptorSetLayout, allocator unsafe.Pointer)
+	createDescriptorPool                    func(device vkDevice, createInfo *vkDescriptorPoolCreateInfo, allocator unsafe.Pointer, descriptorPool *vkDescriptorPool) vkResult
+	destroyDescriptorPool                   func(device vkDevice, descriptorPool vkDescriptorPool, allocator unsafe.Pointer)
+	allocateDescriptorSets                  func(device vkDevice, createInfo *vkDescriptorSetAllocateInfo, descriptorSets *vkDescriptorSet) vkResult
+	updateDescriptorSets                    func(device vkDevice, descriptorWriteCount uint32, descriptorWrites *vkWriteDescriptorSet, descriptorCopyCount uint32, descriptorCopies unsafe.Pointer)
+	createSampler                           func(device vkDevice, createInfo *vkSamplerCreateInfo, allocator unsafe.Pointer, sampler *vkSampler) vkResult
+	destroySampler                          func(device vkDevice, sampler vkSampler, allocator unsafe.Pointer)
+	createBuffer                            func(device vkDevice, createInfo *vkBufferCreateInfo, allocator unsafe.Pointer, buffer *vkBuffer) vkResult
+	destroyBuffer                           func(device vkDevice, buffer vkBuffer, allocator unsafe.Pointer)
+	getBufferMemoryRequirements             func(device vkDevice, buffer vkBuffer, memoryRequirements *vkMemoryRequirements)
+	allocateMemory                          func(device vkDevice, createInfo *vkMemoryAllocateInfo, allocator unsafe.Pointer, memory *vkDeviceMemory) vkResult
+	freeMemory                              func(device vkDevice, memory vkDeviceMemory, allocator unsafe.Pointer)
+	bindBufferMemory                        func(device vkDevice, buffer vkBuffer, memory vkDeviceMemory, memoryOffset vkDeviceSize) vkResult
+	mapMemory                               func(device vkDevice, memory vkDeviceMemory, offset vkDeviceSize, size vkDeviceSize, flags uint32, data *unsafe.Pointer) vkResult
+	unmapMemory                             func(device vkDevice, memory vkDeviceMemory)
+	createImage                             func(device vkDevice, createInfo *vkImageCreateInfo, allocator unsafe.Pointer, image *vkImage) vkResult
+	destroyImage                            func(device vkDevice, image vkImage, allocator unsafe.Pointer)
+	getImageMemoryRequirements              func(device vkDevice, image vkImage, memoryRequirements *vkMemoryRequirements)
+	bindImageMemory                         func(device vkDevice, image vkImage, memory vkDeviceMemory, memoryOffset vkDeviceSize) vkResult
+	cmdPipelineBarrier                      func(commandBuffer vkCommandBuffer, srcStageMask uint32, dstStageMask uint32, dependencyFlags uint32, memoryBarrierCount uint32, memoryBarriers unsafe.Pointer, bufferMemoryBarrierCount uint32, bufferMemoryBarriers unsafe.Pointer, imageMemoryBarrierCount uint32, imageMemoryBarriers *vkImageMemoryBarrier)
+	cmdCopyBufferToImage                    func(commandBuffer vkCommandBuffer, srcBuffer vkBuffer, dstImage vkImage, dstImageLayout uint32, regionCount uint32, regions *vkBufferImageCopy)
 }
 
 type instance struct {
@@ -357,6 +439,10 @@ func (r vkResult) String() string {
 		return "VK_ERROR_LAYER_NOT_PRESENT"
 	case vkErrorExtAbsent:
 		return "VK_ERROR_EXTENSION_NOT_PRESENT"
+	case vkSuboptimalKHR:
+		return "VK_SUBOPTIMAL_KHR"
+	case vkErrorOutOfDateKHR:
+		return "VK_ERROR_OUT_OF_DATE_KHR"
 	default:
 		return fmt.Sprintf("VkResult(%d)", int32(r))
 	}

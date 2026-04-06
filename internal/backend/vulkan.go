@@ -1,10 +1,7 @@
 package backend
 
 import (
-	"image/png"
 	"os"
-	"path/filepath"
-	"sync"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
@@ -21,23 +18,10 @@ type vulkanDesktopBackend struct {
 	surface       rhi.Surface
 	device        rhi.Device
 	swapchain     rhi.Swapchain
+	renderer      *vkapi.Renderer2D
 	virtualWidth  int
 	virtualHeight int
 	pixelPerfect  bool
-	textures      textureCatalog
-}
-
-type textureCatalog struct {
-	mu     sync.Mutex
-	nextID render.TextureID
-	byPath map[string]textureMeta
-	byID   map[render.TextureID]textureMeta
-}
-
-type textureMeta struct {
-	id     render.TextureID
-	width  int
-	height int
 }
 
 func newVulkanDesktopBackend(title string, width, height int, keyMap map[string]string) (platformapi.Backend, error) {
@@ -92,16 +76,23 @@ func newVulkanDesktopBackend(title string, width, height int, keyMap map[string]
 		return nil, err
 	}
 
+	renderer, err := vkapi.NewRenderer2D(device, swapchain)
+	if err != nil {
+		_ = swapchain.Destroy()
+		_ = device.Destroy()
+		_ = surface.Destroy()
+		_ = instance.Destroy()
+		_ = window.Destroy()
+		return nil, err
+	}
+
 	return &vulkanDesktopBackend{
 		window:    window,
 		instance:  instance,
 		surface:   surface,
 		device:    device,
 		swapchain: swapchain,
-		textures: textureCatalog{
-			byPath: make(map[string]textureMeta),
-			byID:   make(map[render.TextureID]textureMeta),
-		},
+		renderer:  renderer,
 	}, nil
 }
 
@@ -120,21 +111,23 @@ func (b *vulkanDesktopBackend) PumpEvents() bool {
 }
 
 func (b *vulkanDesktopBackend) LoadTexture(path string) (render.TextureID, int, int, error) {
-	return b.textures.load(path)
+	if b.renderer == nil {
+		return 0, 0, 0, nil
+	}
+	return b.renderer.LoadTexture(path)
 }
 
 func (b *vulkanDesktopBackend) SetLogicalSize(w, h int, pixelPerfect bool) error {
 	b.virtualWidth = w
 	b.virtualHeight = h
 	b.pixelPerfect = pixelPerfect
+	if b.renderer != nil {
+		b.renderer.SetLogicalSize(w, h, pixelPerfect)
+	}
 	return nil
 }
 
 func (b *vulkanDesktopBackend) DrawFrame(clearColor geom.Color, cmds []render.DrawCmd, lines []string) error {
-	_ = clearColor
-	_ = cmds
-	_ = lines
-
 	if b == nil || b.window == nil || b.swapchain == nil {
 		return nil
 	}
@@ -146,13 +139,22 @@ func (b *vulkanDesktopBackend) DrawFrame(clearColor geom.Color, cmds []render.Dr
 			return err
 		}
 	}
-	return nil
+	if b.renderer == nil {
+		return nil
+	}
+	return b.renderer.DrawFrame(clearColor, cmds, lines)
 }
 
 func (b *vulkanDesktopBackend) Destroy() error {
 	var err error
 	if b == nil {
 		return nil
+	}
+	if b.renderer != nil {
+		if destroyErr := b.renderer.Destroy(); err == nil {
+			err = destroyErr
+		}
+		b.renderer = nil
 	}
 	if b.swapchain != nil {
 		if destroyErr := b.swapchain.Destroy(); err == nil {
@@ -185,40 +187,6 @@ func (b *vulkanDesktopBackend) Destroy() error {
 		b.window = nil
 	}
 	return err
-}
-
-func (c *textureCatalog) load(path string) (render.TextureID, int, int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	cleanPath, err := filepath.Abs(path)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	if meta, ok := c.byPath[cleanPath]; ok {
-		return meta.id, meta.width, meta.height, nil
-	}
-
-	file, err := os.Open(cleanPath)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	defer file.Close()
-
-	cfg, err := png.DecodeConfig(file)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	c.nextID++
-	meta := textureMeta{
-		id:     c.nextID,
-		width:  cfg.Width,
-		height: cfg.Height,
-	}
-	c.byPath[cleanPath] = meta
-	c.byID[meta.id] = meta
-	return meta.id, meta.width, meta.height, nil
 }
 
 func vulkanValidationEnabled() bool {

@@ -74,6 +74,7 @@ type vkPhysicalDevicePropertiesHeader struct {
 type device struct {
 	api                *vulkanAPI
 	physicalDevice     vkPhysicalDevice
+	memoryProperties   vkPhysicalDeviceMemoryProperties
 	handle             vkDevice
 	surface            *surface
 	graphicsQueue      vkQueue
@@ -117,6 +118,7 @@ func (i *instance) CreateDevice(surface rhi.Surface, opts rhi.DeviceOptions) (rh
 	dev := &device{
 		api:                i.api,
 		physicalDevice:     candidate.physicalDevice,
+		memoryProperties:   readPhysicalDeviceMemoryProperties(i.api, candidate.physicalDevice),
 		handle:             deviceHandle,
 		surface:            vkSurface,
 		graphicsQueue:      graphicsQueue,
@@ -172,6 +174,20 @@ func requireSurface(value rhi.Surface) (*surface, error) {
 		return nil, fmt.Errorf("%w: surface handle is invalid", ErrSurfaceUnsupported)
 	}
 	return surface, nil
+}
+
+func requireDevice(value rhi.Device) (*device, error) {
+	if value == nil {
+		return nil, fmt.Errorf("%w: nil device", ErrCreateDevice)
+	}
+	device, ok := value.(*device)
+	if !ok {
+		return nil, fmt.Errorf("%w: expected Vulkan device, got %T", ErrCreateDevice, value)
+	}
+	if device.handle == 0 {
+		return nil, fmt.Errorf("%w: device handle is invalid", ErrCreateDevice)
+	}
+	return device, nil
 }
 
 func enumerateDeviceCandidates(api *vulkanAPI, instance vkInstance, surface *surface) ([]deviceCandidate, error) {
@@ -230,6 +246,14 @@ func inspectDeviceCandidate(api *vulkanAPI, physicalDevice vkPhysicalDevice, sur
 	}
 
 	return candidate, nil
+}
+
+func readPhysicalDeviceMemoryProperties(api *vulkanAPI, physicalDevice vkPhysicalDevice) vkPhysicalDeviceMemoryProperties {
+	var properties vkPhysicalDeviceMemoryProperties
+	if api.getPhysicalDeviceMemoryProperties != nil {
+		api.getPhysicalDeviceMemoryProperties(physicalDevice, &properties)
+	}
+	return properties
 }
 
 func selectDeviceCandidate(candidates []deviceCandidate, opts rhi.DeviceOptions) (deviceCandidate, error) {

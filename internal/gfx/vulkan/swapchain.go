@@ -172,6 +172,20 @@ func (s *swapchain) Destroy() error {
 	return nil
 }
 
+func requireSwapchain(value rhi.Swapchain) (*swapchain, error) {
+	if value == nil {
+		return nil, fmt.Errorf("%w: nil swapchain", ErrCreateSwapchain)
+	}
+	swapchain, ok := value.(*swapchain)
+	if !ok {
+		return nil, fmt.Errorf("%w: expected Vulkan swapchain, got %T", ErrCreateSwapchain, value)
+	}
+	if swapchain.handle == 0 {
+		return nil, fmt.Errorf("%w: swapchain handle is invalid", ErrCreateSwapchain)
+	}
+	return swapchain, nil
+}
+
 func (d *device) buildSwapchainCreateInfo(surface *surface, desc rhi.SwapchainDescriptor, oldSwapchain vkSwapchainKHR) (rhi.SwapchainDescriptor, vkSwapchainCreateInfoKHR, error) {
 	normalized, err := rhi.NormalizeSwapchainDescriptor(desc, surface.target.Extent)
 	if err != nil {
