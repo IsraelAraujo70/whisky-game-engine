@@ -28,9 +28,20 @@ func loadDefaultAPI() (*vulkanAPI, error) {
 		purego.RegisterLibFunc(&api.enumerateInstanceLayerProperties, handle, "vkEnumerateInstanceLayerProperties")
 		purego.RegisterLibFunc(&api.createInstance, handle, "vkCreateInstance")
 		purego.RegisterLibFunc(&api.destroyInstance, handle, "vkDestroyInstance")
+		tryRegisterLibFunc(handle, "vkCreateXlibSurfaceKHR", &api.createXlibSurfaceKHR)
+		tryRegisterLibFunc(handle, "vkCreateWaylandSurfaceKHR", &api.createWaylandSurfaceKHR)
+		tryRegisterLibFunc(handle, "vkDestroySurfaceKHR", &api.destroySurfaceKHR)
 		defaultAPI = api
 	})
 	return defaultAPI, defaultAPIErr
+}
+
+func tryRegisterLibFunc(handle uintptr, name string, target any) {
+	addr, err := purego.Dlsym(handle, name)
+	if err != nil {
+		return
+	}
+	purego.RegisterFunc(target, addr)
 }
 
 func loadUnixVulkanLibrary() (uintptr, error) {

@@ -14,6 +14,7 @@ var (
 	ErrMissingExtension   = errors.New("vulkan: required instance extension unavailable")
 	ErrMissingLayer       = errors.New("vulkan: required validation layer unavailable")
 	ErrCreateInstance     = errors.New("vulkan: failed to create instance")
+	ErrCreateSurface      = errors.New("vulkan: failed to create surface")
 	ErrNotImplemented     = errors.New("vulkan: feature not implemented yet")
 	ErrSurfaceUnsupported = errors.New("vulkan: surface creation is not implemented yet")
 )
@@ -82,6 +83,10 @@ type vulkanAPI struct {
 	enumerateInstanceLayerProperties     func(propertyCount *uint32, properties *vkLayerProperties) vkResult
 	createInstance                       func(createInfo *vkInstanceCreateInfo, allocator unsafe.Pointer, instance *vkInstance) vkResult
 	destroyInstance                      func(instance vkInstance, allocator unsafe.Pointer)
+	createWin32SurfaceKHR                func(instance vkInstance, createInfo *vkWin32SurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
+	createXlibSurfaceKHR                 func(instance vkInstance, createInfo *vkXlibSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
+	createWaylandSurfaceKHR              func(instance vkInstance, createInfo *vkWaylandSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult
+	destroySurfaceKHR                    func(instance vkInstance, surface vkSurfaceKHR, allocator unsafe.Pointer)
 }
 
 type instance struct {
@@ -126,13 +131,6 @@ func newInstanceWithAPI(api *vulkanAPI, opts Options) (rhi.Instance, error) {
 
 func (i *instance) Backend() rhi.BackendKind {
 	return rhi.BackendKindVulkan
-}
-
-func (i *instance) CreateSurface(target rhi.SurfaceTarget) (rhi.Surface, error) {
-	if _, err := rhi.NormalizeSurfaceTarget(target); err != nil {
-		return nil, err
-	}
-	return nil, ErrSurfaceUnsupported
 }
 
 func (i *instance) CreateDevice(surface rhi.Surface, opts rhi.DeviceOptions) (rhi.Device, error) {

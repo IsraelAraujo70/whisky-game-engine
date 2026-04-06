@@ -4,7 +4,7 @@
 
 Whisky is a desktop-first 2D game engine written in Go. It targets developers who want a code-first workflow, a clean runtime architecture, and a path from personal experimentation to reusable open source tooling.
 
-The first implementation prioritizes a strong foundation over flashy surface area. The engine starts with a minimal runtime loop, scene graph, input actions, collision primitives, and project tooling, while keeping the architecture aligned with the future SDL3 + OpenGL runtime.
+The first implementation prioritizes a strong foundation over flashy surface area. The engine starts with a minimal runtime loop, scene graph, input actions, collision primitives, and project tooling, while keeping the architecture aligned with the future native-window + Vulkan runtime and a later Metal path for macOS.
 
 ## Core Principles
 
@@ -50,8 +50,8 @@ Developers who:
 
 ### Out of Scope (Current Slice)
 
-- SDL3 window creation
-- OpenGL rendering
+- Vulkan device/swapchain presentation
+- Metal rendering
 - Sprite batching
 - Real asset loading pipeline
 - Audio playback
@@ -61,8 +61,8 @@ Developers who:
 
 ### Next Slice
 
-- SDL3 platform layer
-- GL33 renderer shell
+- Vulkan device + swapchain shell
+- Metal backend design for macOS
 - Asset handles and cache
 - Camera and sprite components
 - Real sample gameplay content
@@ -82,7 +82,7 @@ Layer 2 — Internal Tooling
   internal/cli, internal/project, internal/template
 
 Layer 1 — Platform / Native Backends
-  planned: SDL3, OpenGL 3.3, asset watchers, audio
+  planned: Win32/X11/Wayland, Vulkan, Metal, asset watchers, audio
 ```
 
 ### Runtime Flow
@@ -112,7 +112,7 @@ whisky run
   -> execute "go run <entry_point>" in the current project
 
 whisky doctor
-  -> inspect Go, git, pkg-config, SDL3 and OpenGL availability
+  -> inspect Go, git, pkg-config, Vulkan, X11, and Wayland availability
 ```
 
 ## Success Criteria
@@ -128,8 +128,7 @@ whisky doctor
 | Area | Focus | Key Deliverables |
 |------|-------|-----------------|
 | **Foundation** | Core architecture | runtime loop, config, CLI, templates, docs, tests |
-| **Native runtime** | Platform layer | SDL3 init, thread model, platform input shell |
-| **Rendering** | Visual output | GL33 context, sprite batch, camera, clear/present |
+| **Native runtime** | Platform layer | Win32/X11/Wayland init, thread model, platform input shell |
+| **Rendering** | Visual output | Vulkan device/swapchain, sprite batch, camera, clear/present |
 | **Content** | Asset pipeline | assets, tilemap ingestion, animation, sample game |
 | **Gameplay** | Game systems | audio, collision workflow, editor-facing metadata |
-

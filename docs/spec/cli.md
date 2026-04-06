@@ -29,8 +29,8 @@ Reports availability of:
 - `go`
 - `git`
 - `pkg-config`
-- `sdl3`
-- `gl`
+- `vulkan`
+- `x11`
+- `wayland-client`
 
 This command is intentionally pragmatic and shell-based.
-

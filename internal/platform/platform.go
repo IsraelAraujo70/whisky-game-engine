@@ -21,7 +21,7 @@ type Renderer interface {
 
 // Backend is the current integration point used by whisky.Run.
 // The long-term direction is to keep platform and rendering separable while
-// allowing transitional backends, such as SDL3, to implement both.
+// the Vulkan runtime path is completed.
 type Backend interface {
 	Platform
 	Renderer

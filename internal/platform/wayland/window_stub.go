@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux || (!amd64 && !arm64)
 
 package wayland
 
@@ -9,7 +9,7 @@ import (
 	platformapi "github.com/IsraelAraujo70/whisky-game-engine/internal/platform"
 )
 
-var ErrUnsupported = errors.New("wayland platform backend is only supported on Linux")
+var ErrUnsupported = errors.New("wayland platform backend is only supported on Linux amd64/arm64")
 
 type Window struct{}
 

@@ -37,6 +37,8 @@ func loadDefaultAPI() (*vulkanAPI, error) {
 			defaultAPIErr = err
 			return
 		}
+		tryRegisterProc(dll, "vkCreateWin32SurfaceKHR", &api.createWin32SurfaceKHR)
+		tryRegisterProc(dll, "vkDestroySurfaceKHR", &api.destroySurfaceKHR)
 		defaultAPI = api
 	})
 	return defaultAPI, defaultAPIErr
@@ -49,4 +51,12 @@ func registerProc(dll *windows.LazyDLL, name string, target any) error {
 	}
 	purego.RegisterFunc(target, proc.Addr())
 	return nil
+}
+
+func tryRegisterProc(dll *windows.LazyDLL, name string, target any) {
+	proc := dll.NewProc(name)
+	if err := proc.Find(); err != nil {
+		return
+	}
+	purego.RegisterFunc(target, proc.Addr())
 }

@@ -126,6 +126,96 @@ func TestInstanceDestroyCallsAPI(t *testing.T) {
 	}
 }
 
+func TestInstanceCreateSurfaceWin32(t *testing.T) {
+	var captured vkWin32SurfaceCreateInfoKHR
+
+	inst := &instance{
+		api: &vulkanAPI{
+			createWin32SurfaceKHR: func(instance vkInstance, createInfo *vkWin32SurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult {
+				captured = *createInfo
+				*surface = vkSurfaceKHR(0xBEEF)
+				return vkSuccess
+			},
+			destroySurfaceKHR: func(instance vkInstance, surface vkSurfaceKHR, allocator unsafe.Pointer) {},
+		},
+		handle:            0xCAFE,
+		enabledExtensions: []string{extSurface, extWin32Surface},
+	}
+
+	target := rhi.SurfaceTarget{
+		Window: platformapi.NativeWindowHandle{
+			Kind:     platformapi.NativeWindowKindWin32,
+			Window:   0x1111,
+			Instance: 0x2222,
+		},
+		Extent: rhi.Extent2D{Width: 1280, Height: 720},
+	}
+
+	surface, err := inst.CreateSurface(target)
+	if err != nil {
+		t.Fatalf("expected surface creation to succeed, got %v", err)
+	}
+	defer surface.Destroy()
+
+	if captured.Hwnd != unsafe.Pointer(uintptr(0x1111)) {
+		t.Fatalf("expected HWND 0x1111, got %#x", uintptr(captured.Hwnd))
+	}
+	if captured.Hinstance != unsafe.Pointer(uintptr(0x2222)) {
+		t.Fatalf("expected HINSTANCE 0x2222, got %#x", uintptr(captured.Hinstance))
+	}
+	if got := surface.Target(); !reflect.DeepEqual(got, target) {
+		t.Fatalf("expected target %v, got %v", target, got)
+	}
+}
+
+func TestInstanceCreateSurfaceMissingExtension(t *testing.T) {
+	inst := &instance{
+		api: &vulkanAPI{
+			createWaylandSurfaceKHR: func(instance vkInstance, createInfo *vkWaylandSurfaceCreateInfoKHR, allocator unsafe.Pointer, surface *vkSurfaceKHR) vkResult {
+				t.Fatal("createWaylandSurfaceKHR should not be called without the required extension")
+				return vkSuccess
+			},
+		},
+		handle:            0xCAFE,
+		enabledExtensions: []string{extSurface},
+	}
+
+	_, err := inst.CreateSurface(rhi.SurfaceTarget{
+		Window: platformapi.NativeWindowHandle{
+			Kind:    platformapi.NativeWindowKindWayland,
+			Display: 0x1111,
+			Window:  0x2222,
+		},
+		Extent: rhi.Extent2D{Width: 800, Height: 600},
+	})
+	if !errors.Is(err, ErrMissingExtension) {
+		t.Fatalf("expected ErrMissingExtension, got %v", err)
+	}
+}
+
+func TestSurfaceDestroyCallsAPI(t *testing.T) {
+	destroyed := false
+	surface := &surface{
+		api: &vulkanAPI{
+			destroySurfaceKHR: func(instance vkInstance, surface vkSurfaceKHR, allocator unsafe.Pointer) {
+				destroyed = true
+			},
+		},
+		instance: 0xAAAA,
+		handle:   0xBBBB,
+	}
+
+	if err := surface.Destroy(); err != nil {
+		t.Fatalf("expected destroy to succeed, got %v", err)
+	}
+	if !destroyed {
+		t.Fatal("expected destroySurfaceKHR to be called")
+	}
+	if surface.handle != 0 {
+		t.Fatalf("expected surface handle to be reset, got %#x", surface.handle)
+	}
+}
+
 func fakeEnumerateExtensions(names ...string) func(*byte, *uint32, *vkExtensionProperties) vkResult {
 	return func(layerName *byte, propertyCount *uint32, properties *vkExtensionProperties) vkResult {
 		if properties == nil {

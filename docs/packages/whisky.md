@@ -10,9 +10,8 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 | `internal/backend/desktop_*.go` | OS-selected desktop backend factories used by the runtime |
 | `internal/nativewindow/desktop_*.go` | OS-selected native window factories for future Vulkan/D3D12/Metal integration |
 | `internal/gfx/rhi/*.go` | graphics abstraction contracts that bind future render backends to native window handles |
-| `internal/gfx/vulkan/*.go` | Vulkan backend loader and instance-creation path behind the RHI |
+| `internal/gfx/vulkan/*.go` | Vulkan backend loader, instance creation, and native surface creation behind the RHI |
 | `internal/platform/platform.go` | backend contracts for native platform and renderer integration |
-| `internal/platform/sdl3/runtime.go` | transitional SDL3 backend implementing both platform and renderer responsibilities |
 
 ## Responsibilities
 
@@ -20,7 +19,7 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 - lock the main goroutine to the OS thread
 - create a `Context` with Camera2D, Input, and Scene
 - bind the runtime to an internal backend contract rather than a concrete native implementation
-- create a native window with virtual resolution scaling
+- create a native window and, once the Vulkan renderer is complete, bind it to the RHI stack
 - poll native input state and feed it into the input system each frame
 - execute `Load`, `Update`, and `Shutdown` in a predictable order
 - advance the active scene each frame
@@ -46,15 +45,15 @@ Run()
   -> Shutdown()
 ```
 
-At the moment the only backend is SDL3, but `whisky.Run` no longer depends on the concrete `sdl3.Runtime` type. This is the first step toward native platform backends plus Vulkan and D3D12 render paths.
+The SDL3 renderer path has been removed from `whisky.Run`. The native window layer and Vulkan surface path already exist for Win32, X11, and Wayland, but the runtime will fail early on desktop until Vulkan device, swapchain, and frame presentation are wired into the loop.
 
 ## Virtual Resolution
 
-SDL3's `SetLogicalPresentation` handles the mapping from virtual coordinates (e.g. 320x180) to window pixels (e.g. 1280x720). When `Config.PixelPerfect` is true, integer scaling is used; otherwise letterboxing is applied. All draw calls and debug text operate in virtual coordinate space.
+Virtual resolution remains part of the runtime contract, but the concrete mapping from virtual coordinates to window pixels will move into the Vulkan renderer path instead of SDL's logical-presentation API.
 
 ## Input Pipeline
 
-The SDL3 platform reads the keyboard state every frame via `sdl.GetKeyboardState()` and maps scancodes to engine control names. Games bind actions to control names via `ctx.Input.Bind("move_left", "a", "left")`.
+The native Win32, X11, and Wayland backends mirror the same `Config.KeyMap` contract. Wayland currently uses a minimal evdev-based keyboard map and does not yet include full `xkbcommon` layout handling.
 
 The scancode-to-control mapping is defined by `Config.KeyMap` (`whisky.KeyMap`, a `map[string]string`). Keys are human-readable names (e.g. `"w"`, `"space"`, `"f1"`); values are the control names fed into the input system. If `KeyMap` is nil, a built-in default set is used (w/a/s/d, arrows, space, lshift, enter).
 
@@ -72,4 +71,4 @@ Supported key names: letters (`"a"`–`"z"`), digits (`"0"`–`"9"`), arrow keys
 
 ## Rendering
 
-Games queue filled rectangles via `ctx.DrawRect(worldRect, color)`. The Camera2D automatically transforms world coordinates to screen (virtual) coordinates. The SDL3 platform draws rectangles via `RenderFillRect` and renders the debug text overlay on top.
+Games queue filled rectangles via `ctx.DrawRect(worldRect, color)`. The Camera2D automatically transforms world coordinates to screen (virtual) coordinates. The next renderer milestone is to consume that draw queue from the Vulkan backend instead of the removed SDL renderer path.

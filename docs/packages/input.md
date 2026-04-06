@@ -16,7 +16,7 @@ The `input` package models actions instead of hardware events. Games bind one or
 - query `JustPressed(action)`
 - derive a digital axis with `Axis(negativeAction, positiveAction)`
 
-This package is intentionally backend-agnostic. The SDL3 platform feeds it every frame by reading `sdl.GetKeyboardState()` and calling `SetPressed` for each mapped scancode.
+This package is intentionally backend-agnostic. Native platform backends feed it every frame by translating OS keyboard state into semantic control names and calling `SetPressed`.
 
 ## Available control names
 
@@ -60,4 +60,3 @@ ctx.Input.Bind("move_right", "d", "right")
 // In Update:
 dx := ctx.Input.Axis("move_left", "move_right") // returns -1, 0, or +1
 ```
-
