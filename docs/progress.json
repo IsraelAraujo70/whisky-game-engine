@@ -59,7 +59,8 @@
     "Wayland platform package scaffolded as a future native backend target, with explicit not-implemented status instead of SDL fallback behavior",
     "Separate native-window desktop factory with OS-specific selection logic, including Linux X11/Wayland preference handling for future RHI-backed renderers",
     "Initial RHI contract in internal/gfx/rhi covering Instance, Surface, Device, Swapchain, SurfaceTarget validation, and SwapchainDescriptor normalization",
-    "Initial Vulkan backend entrypoint scaffold in internal/gfx/vulkan, establishing the future Instance creation path behind the RHI",
+    "Vulkan dynamic loader on Linux and Windows with typed function binding for instance-level API entrypoints",
+    "Vulkan instance creation through the RHI layer with extension/layer availability checks, typed create-info structs, and deterministic unit tests",
     "Vulkan instance extension and validation-layer selection based on NativeWindow handles (Win32, X11, Wayland)"
   ],
   "remarks": [
@@ -67,7 +68,7 @@
   ],
   "next": [
     "Phase 3: introduce a graphics abstraction (RHI) and implement a Vulkan backend as the first modern renderer path",
-    "Phase 3b: implement Vulkan instance creation, extension selection, validation layers, and surface creation from NativeWindow handles",
+    "Phase 3c: implement Vulkan surface creation from NativeWindow handles (Win32, X11, Wayland as available)",
     "Finish Phase 2 on Linux by implementing Wayland window creation, event dispatch, keyboard integration, and wl_display/wl_surface export",
     "Phase 4: port the 2D renderer to the new backend stack (swapchain, sprite batch, virtual resolution, text/debug overlay)",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",

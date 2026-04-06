@@ -10,7 +10,7 @@ The `whisky` package is the runtime entrypoint for games. It owns the high-level
 | `internal/backend/desktop_*.go` | OS-selected desktop backend factories used by the runtime |
 | `internal/nativewindow/desktop_*.go` | OS-selected native window factories for future Vulkan/D3D12/Metal integration |
 | `internal/gfx/rhi/*.go` | graphics abstraction contracts that bind future render backends to native window handles |
-| `internal/gfx/vulkan/*.go` | Vulkan backend entrypoint scaffold that will implement the RHI |
+| `internal/gfx/vulkan/*.go` | Vulkan backend loader and instance-creation path behind the RHI |
 | `internal/platform/platform.go` | backend contracts for native platform and renderer integration |
 | `internal/platform/sdl3/runtime.go` | transitional SDL3 backend implementing both platform and renderer responsibilities |
 
