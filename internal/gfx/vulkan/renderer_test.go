@@ -62,3 +62,15 @@ func TestBuildDrawDataAppendsDebugOverlay(t *testing.T) {
 		t.Fatalf("expected 24 vertices total, got %d", len(vertices))
 	}
 }
+
+func TestWrapOverlayLineBreaksLongText(t *testing.T) {
+	lines := wrapOverlayLine("A/D move   Space/W/Up jump   J/K attack   LShift sprint", 20)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped output, got %v", lines)
+	}
+	for _, line := range lines {
+		if len([]rune(line)) > 20 {
+			t.Fatalf("line exceeds wrap width: %q", line)
+		}
+	}
+}
