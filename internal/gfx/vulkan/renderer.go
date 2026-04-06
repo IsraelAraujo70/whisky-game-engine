@@ -15,6 +15,9 @@ import (
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/internal/gfx/rhi"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 )
 
 //go:embed shaders/quad.vert.spv
@@ -26,6 +29,8 @@ var quadFragmentSPV []byte
 const (
 	rendererDescriptorCapacity = 1024
 	initialVertexCapacity      = 6 * 2048
+	textOverlayMargin          = 4
+	textOverlayPadding         = 3
 
 	vkFormatR32G32Sfloat       = 103
 	vkFormatR32G32B32A32Sfloat = 109
@@ -41,6 +46,7 @@ type Renderer2D struct {
 	texturesByID   map[render.TextureID]*gpuTexture
 	nextTextureID  render.TextureID
 	whiteTexture   *gpuTexture
+	debugFont      *bitmapFont
 
 	descriptorSetLayout vkDescriptorSetLayout
 	descriptorPool      vkDescriptorPool
@@ -99,6 +105,14 @@ type drawBatch struct {
 	vertexCount uint32
 }
 
+type bitmapFont struct {
+	texture     *gpuTexture
+	glyphWidth  int
+	glyphHeight int
+	lineHeight  int
+	glyphs      map[rune]geom.Rect
+}
+
 func NewRenderer2D(deviceValue rhi.Device, swapchainValue rhi.Swapchain) (*Renderer2D, error) {
 	device, err := requireDevice(deviceValue)
 	if err != nil {
@@ -130,6 +144,12 @@ func NewRenderer2D(deviceValue rhi.Device, swapchainValue rhi.Swapchain) (*Rende
 		return nil, err
 	}
 	renderer.whiteTexture = whiteTexture
+	debugFont, err := renderer.createDebugFont()
+	if err != nil {
+		renderer.Destroy()
+		return nil, err
+	}
+	renderer.debugFont = debugFont
 
 	runtime.SetFinalizer(renderer, func(r *Renderer2D) {
 		_ = r.Destroy()
@@ -178,8 +198,6 @@ func (r *Renderer2D) LoadTexture(path string) (render.TextureID, int, int, error
 }
 
 func (r *Renderer2D) DrawFrame(clearColor geom.Color, cmds []render.DrawCmd, lines []string) error {
-	_ = lines
-
 	if r == nil {
 		return nil
 	}
@@ -187,7 +205,7 @@ func (r *Renderer2D) DrawFrame(clearColor geom.Color, cmds []render.DrawCmd, lin
 		return err
 	}
 
-	vertices, batches := r.buildDrawData(cmds)
+	vertices, batches := r.buildDrawData(cmds, lines)
 	frameIndex := r.currentFrame
 	if err := r.waitForFence(r.inFlightFences[frameIndex]); err != nil {
 		return err
@@ -957,7 +975,7 @@ func (r *Renderer2D) computeViewport() (vkViewport, vkRect2D) {
 	return viewport, scissor
 }
 
-func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd) ([]quadVertex, []drawBatch) {
+func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd, lines []string) ([]quadVertex, []drawBatch) {
 	vertices := make([]quadVertex, 0, len(cmds)*6)
 	batches := make([]drawBatch, 0, len(cmds))
 	virtualWidth := float64(r.virtualWidth)
@@ -972,7 +990,7 @@ func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd) ([]quadVertex, []drawB
 		case render.FillRect:
 			first := uint32(len(vertices))
 			vertices = appendQuad(vertices, drawCmd.Rect, geom.Rect{W: 1, H: 1}, quadColor(drawCmd.Color), virtualWidth, virtualHeight, false, false, 1, 1)
-			batches = append(batches, drawBatch{texture: r.whiteTexture, firstVertex: first, vertexCount: 6})
+			batches = appendOrMergeBatch(batches, r.whiteTexture, first, 6)
 		case render.SpriteCmd:
 			texture := r.texturesByID[drawCmd.Texture]
 			if texture == nil {
@@ -980,10 +998,29 @@ func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd) ([]quadVertex, []drawB
 			}
 			first := uint32(len(vertices))
 			vertices = appendQuad(vertices, drawCmd.Dst, drawCmd.Src, whiteColor(), virtualWidth, virtualHeight, drawCmd.FlipH, drawCmd.FlipV, texture.width, texture.height)
-			batches = append(batches, drawBatch{texture: texture, firstVertex: first, vertexCount: 6})
+			batches = appendOrMergeBatch(batches, texture, first, 6)
 		}
 	}
+	vertices, batches = r.appendDebugOverlay(vertices, batches, lines, virtualWidth, virtualHeight)
 	return vertices, batches
+}
+
+func appendOrMergeBatch(batches []drawBatch, texture *gpuTexture, firstVertex uint32, vertexCount uint32) []drawBatch {
+	if texture == nil || vertexCount == 0 {
+		return batches
+	}
+	if len(batches) > 0 {
+		last := &batches[len(batches)-1]
+		if last.texture == texture && last.firstVertex+last.vertexCount == firstVertex {
+			last.vertexCount += vertexCount
+			return batches
+		}
+	}
+	return append(batches, drawBatch{
+		texture:     texture,
+		firstVertex: firstVertex,
+		vertexCount: vertexCount,
+	})
 }
 
 func appendQuad(vertices []quadVertex, dst geom.Rect, src geom.Rect, color [4]float32, virtualWidth, virtualHeight float64, flipH, flipV bool, textureWidth, textureHeight int) []quadVertex {
@@ -1022,6 +1059,82 @@ func appendQuad(vertices []quadVertex, dst geom.Rect, src geom.Rect, color [4]fl
 		bottomLeft,
 		bottomRight,
 	)
+}
+
+func (r *Renderer2D) appendDebugOverlay(vertices []quadVertex, batches []drawBatch, lines []string, virtualWidth, virtualHeight float64) ([]quadVertex, []drawBatch) {
+	if r == nil || r.debugFont == nil || r.debugFont.texture == nil || len(lines) == 0 {
+		return vertices, batches
+	}
+
+	longest := 0
+	visibleLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			visibleLines = append(visibleLines, " ")
+			if longest < 1 {
+				longest = 1
+			}
+			continue
+		}
+		visibleLines = append(visibleLines, line)
+		if n := len([]rune(line)); n > longest {
+			longest = n
+		}
+	}
+	if len(visibleLines) == 0 || longest == 0 {
+		return vertices, batches
+	}
+
+	backgroundRect := geom.Rect{
+		X: float64(textOverlayMargin),
+		Y: float64(textOverlayMargin),
+		W: float64(longest*r.debugFont.glyphWidth + textOverlayPadding*2),
+		H: float64(len(visibleLines)*r.debugFont.lineHeight + textOverlayPadding*2),
+	}
+	first := uint32(len(vertices))
+	vertices = appendQuad(vertices, backgroundRect, geom.Rect{W: 1, H: 1}, [4]float32{0, 0, 0, 0.72}, virtualWidth, virtualHeight, false, false, 1, 1)
+	batches = appendOrMergeBatch(batches, r.whiteTexture, first, 6)
+
+	baseX := float64(textOverlayMargin + textOverlayPadding)
+	baseY := float64(textOverlayMargin + textOverlayPadding)
+	for lineIndex, line := range visibleLines {
+		cursorX := baseX
+		cursorY := baseY + float64(lineIndex*r.debugFont.lineHeight)
+		for _, rawRune := range line {
+			if rawRune == ' ' {
+				cursorX += float64(r.debugFont.glyphWidth)
+				continue
+			}
+			glyphRune := normalizeOverlayRune(rawRune)
+			src, ok := r.debugFont.glyphs[glyphRune]
+			if !ok {
+				cursorX += float64(r.debugFont.glyphWidth)
+				continue
+			}
+
+			dst := geom.Rect{
+				X: cursorX,
+				Y: cursorY,
+				W: float64(r.debugFont.glyphWidth),
+				H: float64(r.debugFont.glyphHeight),
+			}
+			first = uint32(len(vertices))
+			vertices = appendQuad(vertices, dst, src, [4]float32{0.94, 0.96, 0.98, 1}, virtualWidth, virtualHeight, false, false, r.debugFont.texture.width, r.debugFont.texture.height)
+			batches = appendOrMergeBatch(batches, r.debugFont.texture, first, 6)
+			cursorX += float64(r.debugFont.glyphWidth)
+		}
+	}
+
+	return vertices, batches
+}
+
+func normalizeOverlayRune(value rune) rune {
+	switch {
+	case value >= 32 && value <= 126:
+		return value
+	default:
+		return '?'
+	}
 }
 
 func clipX(x float64, width float64) float32 {
@@ -1322,6 +1435,10 @@ func (r *Renderer2D) destroyTextures() {
 	}
 	r.texturesByID = make(map[render.TextureID]*gpuTexture)
 	r.texturesByPath = make(map[string]*gpuTexture)
+	if r.debugFont != nil {
+		r.debugFont.texture.destroy(r.device)
+		r.debugFont = nil
+	}
 	if r.whiteTexture != nil {
 		r.whiteTexture.destroy(r.device)
 		r.whiteTexture = nil
@@ -1374,4 +1491,51 @@ func imageToRGBA(src image.Image) *image.RGBA {
 
 func onePixelWhite() []byte {
 	return []byte{255, 255, 255, 255}
+}
+
+func (r *Renderer2D) createDebugFont() (*bitmapFont, error) {
+	face := basicfont.Face7x13
+	printables := make([]rune, 0, 95)
+	for value := rune(32); value <= 126; value++ {
+		printables = append(printables, value)
+	}
+
+	cols := 16
+	rows := (len(printables) + cols - 1) / cols
+	atlasWidth := cols * face.Advance
+	atlasHeight := rows * face.Height
+	atlas := image.NewRGBA(image.Rect(0, 0, atlasWidth, atlasHeight))
+	drawer := &font.Drawer{
+		Dst:  atlas,
+		Src:  image.White,
+		Face: face,
+	}
+
+	glyphs := make(map[rune]geom.Rect, len(printables))
+	for index, value := range printables {
+		col := index % cols
+		row := index / cols
+		x := col * face.Advance
+		y := row * face.Height
+		drawer.Dot = fixed.P(x, y+face.Ascent)
+		drawer.DrawString(string(value))
+		glyphs[value] = geom.Rect{
+			X: float64(x),
+			Y: float64(y),
+			W: float64(face.Width),
+			H: float64(face.Height),
+		}
+	}
+
+	texture, err := r.createTextureFromRGBA(atlas.Pix, atlas.Bounds().Dx(), atlas.Bounds().Dy())
+	if err != nil {
+		return nil, err
+	}
+	return &bitmapFont{
+		texture:     texture,
+		glyphWidth:  face.Advance,
+		glyphHeight: face.Height,
+		lineHeight:  face.Height + 2,
+		glyphs:      glyphs,
+	}, nil
 }

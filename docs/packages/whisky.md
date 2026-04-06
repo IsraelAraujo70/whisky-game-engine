@@ -72,4 +72,4 @@ Supported key names: letters (`"a"`–`"z"`), digits (`"0"`–`"9"`), arrow keys
 
 ## Rendering
 
-Games queue filled rectangles and sprites via `ctx.DrawRect(...)` and `ctx.DrawSprite(...)`. The Camera2D automatically transforms world coordinates to virtual screen coordinates, and the Vulkan backend turns those commands into textured quads. The current renderer covers clear/present, rectangles, sprites, texture upload, and virtual-resolution presentation; the main remaining rendering gap is GPU text/debug overlay rendering and more advanced batching.
+Games queue filled rectangles and sprites via `ctx.DrawRect(...)` and `ctx.DrawSprite(...)`. The Camera2D automatically transforms world coordinates to virtual screen coordinates, and the Vulkan backend turns those commands into textured quads. The current renderer covers clear/present, rectangles, sprites, PNG texture upload, virtual-resolution presentation, and a GPU debug overlay driven by `Context.SetDebugText(...)`. The remaining rendering work is deeper batching and more advanced text/UI paths.

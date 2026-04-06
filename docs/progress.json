@@ -66,15 +66,16 @@
     "Vulkan 2D renderer bootstrap with swapchain image enumeration, image views, render pass, framebuffers, command pool/buffers, semaphores, fences, and graphics pipeline setup",
     "First presented Vulkan frame path: acquire image, clear color attachment, submit, and present through the native swapchain",
     "Runtime draw-command consumption on Vulkan for FillRect and SpriteCmd using a textured quad pipeline, dynamic vertex uploads, per-texture descriptors, and PNG texture upload to GPU memory",
-    "Virtual-resolution viewport mapping moved into the Vulkan renderer path, including centered letterboxing and pixel-perfect scaling policy"
+    "Virtual-resolution viewport mapping moved into the Vulkan renderer path, including centered letterboxing and pixel-perfect scaling policy",
+    "GPU debug/text overlay path using a bitmap font atlas generated at renderer startup and consumed through the same Vulkan quad pipeline",
+    "Lower-overhead 2D batching by merging contiguous draw runs that share the same texture while preserving draw order"
   ],
   "remarks": [
     "Long-term engine direction is now explicit in code as well as docs: no SDL3 renderer fallback remains in the runtime; the desktop path is native windows plus Vulkan, with Metal planned later for macOS.",
     "The current Vulkan renderer intentionally focuses on rectangles and sprites first; debug text/overlay rendering still needs its own GPU path."
   ],
   "next": [
-    "Phase 4: deepen the Vulkan renderer with real sprite batching, texture-atlas friendly draw sorting, and lower-overhead descriptor/vertex streaming",
-    "Add a GPU text/debug overlay path so SetDebugText no longer gets dropped by the Vulkan backend",
+    "Phase 4: deepen the Vulkan renderer with texture-atlas friendly draw sorting and lower-overhead descriptor/vertex streaming",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",
     "Wayland pointer/mouse support and richer keyboard layout handling (xkbcommon instead of the current minimal evdev mapping)",
     "Audio asset loading for WAV or OGG",
