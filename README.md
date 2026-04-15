@@ -6,7 +6,7 @@ Whisky is a 2D game engine for Go, built for desktop-first games and structured 
 
 This repository is bootstrapped with:
 
-- an SDL3-backed runtime loop in [`whisky`](./whisky)
+- a native-window + Vulkan-first runtime architecture in [`whisky`](./whisky)
 - foundational packages for [`geom`](./geom), [`scene`](./scene), [`input`](./input), and [`physics`](./physics)
 - reusable gameplay primitives in [`gameplay`](./gameplay) for health, damage, and basic patrol AI
 - a CLI in [`cmd/whisky`](./cmd/whisky) with `new`, `run`, and `doctor`
@@ -42,8 +42,8 @@ go run ./examples/pixel-quest/cmd/game
 
 ## Near-term direction
 
-- deepen the SDL3 platform layer with real input mapping
-- add the GL33 renderer and sprite batch
+- finish Vulkan device, swapchain, and 2D renderer integration
+- add a Metal-backed renderer path for macOS after the RHI stabilizes
 - load real assets from `whisky.json`
 - evolve the sample into a small playable pixel-art game
 

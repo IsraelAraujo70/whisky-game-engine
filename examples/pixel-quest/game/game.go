@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/IsraelAraujo70/whisky-game-engine/audio"
 	"github.com/IsraelAraujo70/whisky-game-engine/gameplay"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
@@ -63,6 +64,13 @@ type pixelQuest struct {
 	velocity       geom.Vec2 // accumulates gravity and jump impulse
 	grounded       bool      // true when standing on solid or one-way surface
 	jumpsLeft      int       // remaining jumps (reset to 2 on landing)
+
+	// Audio sound effects. Nil when audio engine is not available.
+	// To use your own sounds, place .wav or .ogg files in the assets/
+	// directory and load them in Load() with:
+	//   snd, err := audio.LoadSound(filepath.Join(assetsDir, "jump.wav"), 48000)
+	jumpSound   *audio.Sound
+	attackSound *audio.Sound
 }
 
 func Run() error {
@@ -159,6 +167,20 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 	ctx.Input.Bind("jump", "jump")
 	ctx.Input.Bind("attack", "attack")
 
+	// --- Audio ---
+	// Generate procedural sound effects (short beeps). In a real game you
+	// would load .wav or .ogg files from the assets/ directory instead:
+	//   g.jumpSound, _ = audio.LoadSound(filepath.Join(assetsDir, "jump.wav"), 48000)
+	//   g.attackSound, _ = audio.LoadSound(filepath.Join(assetsDir, "attack.ogg"), 48000)
+	g.jumpSound = audio.NewSoundFromSamples(
+		audio.GenerateSineWave(523.25, 0.08, 48000), // C5 note, 80ms
+		48000,
+	)
+	g.attackSound = audio.NewSoundFromSamples(
+		audio.GenerateSineWave(220.0, 0.06, 48000), // A3 note, 60ms
+		48000,
+	)
+
 	ctx.Logf("pixel-quest booted with tilemap (%dx%d tiles)", m.Width, m.Height)
 	return nil
 }
@@ -213,10 +235,16 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	if playerAlive && g.jumpsLeft > 0 && ctx.Input.JustPressed("jump") {
 		g.velocity.Y = jumpVel
 		g.jumpsLeft--
+		if eng := ctx.Audio(); eng != nil && g.jumpSound != nil {
+			eng.Play(g.jumpSound, audio.PlayOpts{Volume: 0.6})
+		}
 	}
 
 	if playerAlive && ctx.Input.JustPressed("attack") {
 		g.attackTimer = playerAttackDuration
+		if eng := ctx.Audio(); eng != nil && g.attackSound != nil {
+			eng.Play(g.attackSound, audio.PlayOpts{Volume: 0.8})
+		}
 	}
 
 	for _, event := range gameplay.ResolveDamage(g.damageSources(), g.damageTargets()) {

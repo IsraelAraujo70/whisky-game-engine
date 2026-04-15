@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/IsraelAraujo70/whisky-game-engine/audio"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
-	"github.com/IsraelAraujo70/whisky-game-engine/internal/platform/sdl3"
+	backendapi "github.com/IsraelAraujo70/whisky-game-engine/internal/backend"
+	platformapi "github.com/IsraelAraujo70/whisky-game-engine/internal/platform"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
 )
@@ -53,6 +55,10 @@ type Config struct {
 	// GravityY is the downward acceleration applied per second (px/s²).
 	// Zero means no gravity. Games read this via ctx.Config.GravityY.
 	GravityY float64
+	// Audio configures the audio engine. If Audio.Enabled is false (or left
+	// at the zero value), audio is initialised with sensible defaults
+	// (enabled, 32 channels, 48 kHz).
+	Audio audio.Config
 }
 
 type Context struct {
@@ -65,10 +71,17 @@ type Context struct {
 	logger *log.Logger
 	quit   bool
 
-	platform   *sdl3.Runtime
-	debugLines []string
-	drawCmds   []render.DrawCmd
-	texSeq     render.TextureID
+	platform    platformapi.Platform
+	renderer    platformapi.Renderer
+	audioEngine *audio.Engine
+	debugLines  []string
+	drawCmds    []render.DrawCmd
+	texSeq      render.TextureID
+}
+
+// Audio returns the audio engine, or nil if audio is disabled.
+func (c *Context) Audio() *audio.Engine {
+	return c.audioEngine
 }
 
 func (c *Context) Quit() {
@@ -88,11 +101,11 @@ func (c *Context) SetDebugText(lines ...string) {
 }
 
 func (c *Context) LoadTexture(path string) (render.TextureID, int, int, error) {
-	if c.platform == nil {
+	if c.renderer == nil {
 		c.texSeq++
 		return c.texSeq, 0, 0, nil
 	}
-	return c.platform.LoadTexture(path)
+	return c.renderer.LoadTexture(path)
 }
 
 func (c *Context) VirtualSize() (w, h float64) {
@@ -170,24 +183,38 @@ func Run(game Game, cfg Config) (err error) {
 		ctx.Scene = scene.New(cfg.Title)
 	}
 
-	var platform *sdl3.Runtime
+	var backend platformapi.Backend
 	if !cfg.Headless && os.Getenv("WHISKY_HEADLESS") != "1" {
-		platform, err = sdl3.New(cfg.Title, cfg.WindowWidth, cfg.WindowHeight, map[string]string(cfg.KeyMap))
+		backend, err = backendapi.NewDesktop(cfg.Title, cfg.WindowWidth, cfg.WindowHeight, map[string]string(cfg.KeyMap))
 		if err != nil {
 			return err
 		}
-		if err = platform.SetLogicalSize(cfg.VirtualWidth, cfg.VirtualHeight, cfg.PixelPerfect); err != nil {
-			_ = platform.Destroy()
+		if err = backend.SetLogicalSize(cfg.VirtualWidth, cfg.VirtualHeight, cfg.PixelPerfect); err != nil {
+			_ = backend.Destroy()
 			return err
 		}
 		defer func() {
-			destroyErr := platform.Destroy()
+			destroyErr := backend.Destroy()
 			if err == nil {
 				err = destroyErr
 			}
 		}()
 	}
-	ctx.platform = platform
+	ctx.platform = backend
+	ctx.renderer = backend
+
+	// --- Audio engine ---
+	audioEngine, audioErr := audio.Init(cfg.Audio)
+	if audioErr != nil {
+		ctx.logger.Printf("audio init failed (continuing without audio): %v", audioErr)
+	} else {
+		ctx.audioEngine = audioEngine
+		defer func() {
+			if shutErr := audioEngine.Shutdown(); shutErr != nil && err == nil {
+				err = shutErr
+			}
+		}()
+	}
 
 	if err := game.Load(ctx); err != nil {
 		return err
@@ -204,9 +231,9 @@ func Run(game Game, cfg Config) (err error) {
 	defer ticker.Stop()
 
 	for {
-		if platform != nil {
-			platform.UpdateInput(ctx.Input)
-			if platform.PumpEvents() {
+		if ctx.platform != nil {
+			ctx.platform.UpdateInput(ctx.Input)
+			if ctx.platform.PumpEvents() {
 				ctx.Quit()
 			}
 		}
@@ -233,8 +260,8 @@ func Run(game Game, cfg Config) (err error) {
 
 		ctx.Scene.Draw(ctx)
 
-		if platform != nil {
-			if err := platform.DrawFrame(ctx.Config.ClearColor, ctx.drawCmds, ctx.overlayLines()); err != nil {
+		if ctx.renderer != nil {
+			if err := ctx.renderer.DrawFrame(ctx.Config.ClearColor, ctx.drawCmds, ctx.overlayLines()); err != nil {
 				return err
 			}
 		}
@@ -269,19 +296,24 @@ func withDefaults(cfg Config) Config {
 		cfg.ClearColor = geom.RGBA(0.08, 0.08, 0.1, 1)
 	}
 
+	// Audio defaults: enabled with 32 channels at 48 kHz.
+	if !cfg.Audio.Enabled && cfg.Audio.Channels == 0 && cfg.Audio.SampleRate == 0 {
+		cfg.Audio.Enabled = true
+	}
+
 	if cfg.KeyMap == nil {
 		cfg.KeyMap = KeyMap{
-			"w":     "move_up",
-			"up":    "move_up",
-			"s":     "move_down",
-			"down":  "move_down",
-			"a":     "move_left",
-			"left":  "move_left",
-			"d":     "move_right",
-			"right": "move_right",
-			"space": "action",
+			"w":      "move_up",
+			"up":     "move_up",
+			"s":      "move_down",
+			"down":   "move_down",
+			"a":      "move_left",
+			"left":   "move_left",
+			"d":      "move_right",
+			"right":  "move_right",
+			"space":  "action",
 			"lshift": "sprint",
-			"enter": "confirm",
+			"enter":  "confirm",
 		}
 	}
 

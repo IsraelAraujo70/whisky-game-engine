@@ -110,8 +110,9 @@ func runDoctor(stdout io.Writer) int {
 		{name: "go", ok: hasCommand("go"), info: versionOf("go", "version")},
 		{name: "git", ok: hasCommand("git"), info: versionOf("git", "--version")},
 		{name: "pkg-config", ok: hasCommand("pkg-config"), info: versionOf("pkg-config", "--version")},
-		{name: "sdl3", ok: pkgConfigExists("sdl3"), info: "pkg-config package"},
-		{name: "gl", ok: pkgConfigExists("gl"), info: "pkg-config package"},
+		{name: "vulkan", ok: pkgConfigExists("vulkan"), info: "pkg-config package"},
+		{name: "x11", ok: pkgConfigExists("x11"), info: "pkg-config package"},
+		{name: "wayland", ok: pkgConfigExists("wayland-client"), info: "pkg-config package"},
 	}
 
 	for _, check := range checks {
