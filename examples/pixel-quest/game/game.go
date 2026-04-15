@@ -11,6 +11,7 @@ import (
 
 	"github.com/IsraelAraujo70/whisky-game-engine/gameplay"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
+	"github.com/IsraelAraujo70/whisky-game-engine/input"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
@@ -302,6 +303,38 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 		ctx.DrawRect(g.playerAttackBox().Rect(), geom.RGBA(1.0, 0.85, 0.2, 0.55))
 	}
 
+	// --- Mouse crosshair ---
+	// Draw a small crosshair at the mouse position as a visual indicator.
+	mx, my := ctx.Mouse().Position()
+	crosshairColor := geom.RGBA(1, 1, 0, 0.7)
+	ctx.DrawRect(geom.Rect{X: mx - 2, Y: my, W: 5, H: 1}, crosshairColor)
+	ctx.DrawRect(geom.Rect{X: mx, Y: my - 2, W: 1, H: 5}, crosshairColor)
+
+	// --- Gamepad movement (left stick) as alternative to keyboard ---
+	if playerAlive {
+		pad := ctx.Gamepad(0)
+		if pad.Connected() {
+			lx := pad.Axis(input.GamepadAxisLX)
+			if lx > 0.2 || lx < -0.2 { // deadzone
+				g.player.Position.X += lx * speed * dt
+				if lx > 0 {
+					g.playerFacing = 1
+				} else {
+					g.playerFacing = -1
+				}
+			}
+			// Gamepad A button = jump
+			if g.jumpsLeft > 0 && pad.JustPressed(input.GamepadButtonA) {
+				g.velocity.Y = jumpVel
+				g.jumpsLeft--
+			}
+			// Gamepad X button = attack
+			if pad.JustPressed(input.GamepadButtonX) {
+				g.attackTimer = playerAttackDuration
+			}
+		}
+	}
+
 	// --- Debug overlay ---
 	status := "airborne"
 	if !playerAlive {
@@ -316,10 +349,17 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 		status = "trigger reached!"
 	}
 
+	mouseInfo := fmt.Sprintf("mouse=(%.0f,%.0f)", mx, my)
+	padInfo := "gamepad=none"
+	if ctx.Gamepad(0).Connected() {
+		padInfo = fmt.Sprintf("gamepad=connected lx=%.2f", ctx.Gamepad(0).Axis(input.GamepadAxisLX))
+	}
+
 	ctx.SetDebugText(
 		"A/D move   Space/W/Up jump   J/K attack   LShift sprint",
 		fmt.Sprintf("player=(%.0f,%.0f) vel=(%.0f,%.0f)", pp.X, pp.Y, g.velocity.X, g.velocity.Y),
 		fmt.Sprintf("hp=%d/%d  enemies=%d  chasing=%d  grounded=%v  state=%s", g.playerHealth.Current, g.playerHealth.Max, g.aliveEnemies(), g.chasingEnemies(), g.grounded, status),
+		mouseInfo+"  "+padInfo,
 	)
 	return nil
 }

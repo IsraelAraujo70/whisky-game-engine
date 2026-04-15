@@ -71,6 +71,52 @@ func buildKeyBindings(km map[string]string) []keyBinding {
 	return bindings
 }
 
+// sdlButtonToMouse maps SDL mouse button indices (1-based) to our MouseButton
+// enum. SDL uses: 1=Left, 2=Middle, 3=Right, 4=X1, 5=X2.
+var sdlButtonToMouse = map[uint8]input.MouseButton{
+	1: input.MouseButtonLeft,
+	2: input.MouseButtonMiddle,
+	3: input.MouseButtonRight,
+	4: input.MouseButtonX1,
+	5: input.MouseButtonX2,
+}
+
+// sdlButtonToGamepad maps SDL GamepadButton to our GamepadButton enum.
+var sdlButtonToGamepad = map[sdl.GamepadButton]input.GamepadButton{
+	sdl.GAMEPAD_BUTTON_SOUTH:          input.GamepadButtonA,
+	sdl.GAMEPAD_BUTTON_EAST:           input.GamepadButtonB,
+	sdl.GAMEPAD_BUTTON_WEST:           input.GamepadButtonX,
+	sdl.GAMEPAD_BUTTON_NORTH:          input.GamepadButtonY,
+	sdl.GAMEPAD_BUTTON_BACK:           input.GamepadButtonBack,
+	sdl.GAMEPAD_BUTTON_GUIDE:          input.GamepadButtonGuide,
+	sdl.GAMEPAD_BUTTON_START:          input.GamepadButtonStart,
+	sdl.GAMEPAD_BUTTON_LEFT_STICK:     input.GamepadButtonLeftStick,
+	sdl.GAMEPAD_BUTTON_RIGHT_STICK:    input.GamepadButtonRightStick,
+	sdl.GAMEPAD_BUTTON_LEFT_SHOULDER:  input.GamepadButtonLB,
+	sdl.GAMEPAD_BUTTON_RIGHT_SHOULDER: input.GamepadButtonRB,
+	sdl.GAMEPAD_BUTTON_DPAD_UP:        input.GamepadButtonDPadUp,
+	sdl.GAMEPAD_BUTTON_DPAD_DOWN:      input.GamepadButtonDPadDown,
+	sdl.GAMEPAD_BUTTON_DPAD_LEFT:      input.GamepadButtonDPadLeft,
+	sdl.GAMEPAD_BUTTON_DPAD_RIGHT:     input.GamepadButtonDPadRight,
+}
+
+// sdlAxisToGamepad maps SDL GamepadAxis to our GamepadAxis enum.
+var sdlAxisToGamepad = map[sdl.GamepadAxis]input.GamepadAxis{
+	sdl.GAMEPAD_AXIS_LEFTX:         input.GamepadAxisLX,
+	sdl.GAMEPAD_AXIS_LEFTY:         input.GamepadAxisLY,
+	sdl.GAMEPAD_AXIS_RIGHTX:        input.GamepadAxisRX,
+	sdl.GAMEPAD_AXIS_RIGHTY:        input.GamepadAxisRY,
+	sdl.GAMEPAD_AXIS_LEFT_TRIGGER:  input.GamepadAxisLT,
+	sdl.GAMEPAD_AXIS_RIGHT_TRIGGER: input.GamepadAxisRT,
+}
+
+// openGamepad represents an active gamepad tracked by the runtime.
+type openGamepad struct {
+	pad   *sdl.Gamepad
+	joyID sdl.JoystickID
+	slot  int // index 0..MaxGamepads-1
+}
+
 type Runtime struct {
 	window         *sdl.Window
 	renderer       *sdl.Renderer
@@ -78,6 +124,7 @@ type Runtime struct {
 	libraryLoaded  bool
 	sdlInitialized bool
 	keyBindings    []keyBinding
+	gamepads       []*openGamepad
 }
 
 // New creates an SDL3 window and renderer. keyMap maps key names (e.g. "space",
@@ -96,7 +143,7 @@ func New(title string, width, height int, keyMap map[string]string) (*Runtime, e
 		keyBindings:   buildKeyBindings(keyMap),
 	}
 
-	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
+	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_GAMEPAD); err != nil {
 		_ = rt.Destroy()
 		return nil, err
 	}
@@ -145,7 +192,56 @@ func (rt *Runtime) UpdateInput(state *input.State) {
 	}
 }
 
-func (rt *Runtime) PumpEvents() bool {
+// UpdateMouse reads the current mouse state via SDL3 polling.
+// Button press/release events are handled in PumpEvents for precise edge
+// detection; here we update the cursor position every frame.
+func (rt *Runtime) UpdateMouse(mouse *input.MouseState) {
+	buttons, mx, my := sdl.GetMouseState()
+	mouse.SetPosition(float64(mx), float64(my))
+
+	// Poll-based button state (OR with event-driven state from PumpEvents).
+	mouse.SetButton(input.MouseButtonLeft, buttons&sdl.ButtonMask(sdl.BUTTON_LEFT) != 0)
+	mouse.SetButton(input.MouseButtonMiddle, buttons&sdl.ButtonMask(sdl.BUTTON_MIDDLE) != 0)
+	mouse.SetButton(input.MouseButtonRight, buttons&sdl.ButtonMask(sdl.BUTTON_RIGHT) != 0)
+	mouse.SetButton(input.MouseButtonX1, buttons&sdl.ButtonMask(sdl.BUTTON_X1) != 0)
+	mouse.SetButton(input.MouseButtonX2, buttons&sdl.ButtonMask(sdl.BUTTON_X2) != 0)
+}
+
+// UpdateGamepads reads each connected gamepad's axes and buttons.
+func (rt *Runtime) UpdateGamepads(pads [input.MaxGamepads]*input.GamepadState) {
+	for _, og := range rt.gamepads {
+		if og == nil || og.pad == nil || og.slot < 0 || og.slot >= input.MaxGamepads {
+			continue
+		}
+		gs := pads[og.slot]
+		if gs == nil {
+			continue
+		}
+
+		// Axes — SDL returns int16 in [-32768, 32767]; normalize to [-1, 1].
+		for sdlAxis, gamepadAxis := range sdlAxisToGamepad {
+			raw := og.pad.Axis(sdlAxis)
+			var norm float64
+			if raw >= 0 {
+				norm = float64(raw) / 32767.0
+			} else {
+				norm = float64(raw) / 32768.0
+			}
+			gs.SetAxis(gamepadAxis, norm)
+		}
+
+		// Buttons.
+		for sdlBtn, gamepadBtn := range sdlButtonToGamepad {
+			gs.SetButton(gamepadBtn, og.pad.Button(sdlBtn))
+		}
+	}
+}
+
+// PumpEvents processes the SDL event queue. It returns true when the user
+// requests quitting (window close or Escape). Mouse wheel deltas are
+// accumulated on the given MouseState. Gamepad add/remove events are
+// handled internally.
+func (rt *Runtime) PumpEvents(mouse *input.MouseState, pads [input.MaxGamepads]*input.GamepadState) bool {
 	var event sdl.Event
 
 	for sdl.PollEvent(&event) {
@@ -157,10 +253,103 @@ func (rt *Runtime) PumpEvents() bool {
 			if key != nil && key.Scancode == sdl.SCANCODE_ESCAPE {
 				return true
 			}
+
+		// Mouse wheel — accumulate delta on the MouseState.
+		case sdl.EVENT_MOUSE_WHEEL:
+			if mouse != nil {
+				we := event.MouseWheelEvent()
+				if we != nil {
+					dy := float64(we.Y)
+					dx := float64(we.X)
+					if we.Direction == sdl.MOUSEWHEEL_FLIPPED {
+						dx = -dx
+						dy = -dy
+					}
+					mouse.AddWheel(dx, dy)
+				}
+			}
+
+		// Gamepad hotplug.
+		case sdl.EVENT_GAMEPAD_ADDED:
+			ge := event.GamepadDeviceEvent()
+			if ge != nil {
+				rt.openGamepadSlot(ge.Which, pads)
+			}
+		case sdl.EVENT_GAMEPAD_REMOVED:
+			ge := event.GamepadDeviceEvent()
+			if ge != nil {
+				rt.closeGamepad(ge.Which, pads)
+			}
 		}
 	}
 
 	return false
+}
+
+// openGamepadSlot opens the gamepad and assigns it to the first available slot.
+func (rt *Runtime) openGamepadSlot(joyID sdl.JoystickID, pads [input.MaxGamepads]*input.GamepadState) {
+	// Already tracked?
+	for _, og := range rt.gamepads {
+		if og != nil && og.joyID == joyID {
+			return
+		}
+	}
+
+	pad, err := joyID.OpenGamepad()
+	if err != nil || pad == nil {
+		return
+	}
+
+	// Find first free slot.
+	slot := -1
+	for i := 0; i < input.MaxGamepads; i++ {
+		taken := false
+		for _, og := range rt.gamepads {
+			if og != nil && og.slot == i {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			slot = i
+			break
+		}
+	}
+	if slot < 0 {
+		pad.Close()
+		return
+	}
+
+	og := &openGamepad{pad: pad, joyID: joyID, slot: slot}
+	rt.gamepads = append(rt.gamepads, og)
+	if pads[slot] != nil {
+		pads[slot].SetConnected(true)
+	}
+}
+
+// closeGamepad removes the gamepad from tracking and marks its slot disconnected.
+func (rt *Runtime) closeGamepad(joyID sdl.JoystickID, pads [input.MaxGamepads]*input.GamepadState) {
+	for i, og := range rt.gamepads {
+		if og != nil && og.joyID == joyID {
+			if og.slot >= 0 && og.slot < input.MaxGamepads && pads[og.slot] != nil {
+				pads[og.slot].SetConnected(false)
+			}
+			og.pad.Close()
+			rt.gamepads = append(rt.gamepads[:i], rt.gamepads[i+1:]...)
+			return
+		}
+	}
+}
+
+// OpenExistingGamepads scans for already-connected gamepads at startup.
+func (rt *Runtime) OpenExistingGamepads(pads [input.MaxGamepads]*input.GamepadState) {
+	ids, err := sdl.GetGamepads()
+	if err != nil {
+		return
+	}
+	for _, joyID := range ids {
+		rt.openGamepadSlot(joyID, pads)
+	}
 }
 
 func (rt *Runtime) LoadTexture(path string) (render.TextureID, int, int, error) {
@@ -247,6 +436,13 @@ func (rt *Runtime) DrawFrame(clearColor geom.Color, cmds []render.DrawCmd, lines
 }
 
 func (rt *Runtime) Destroy() error {
+	for _, og := range rt.gamepads {
+		if og != nil && og.pad != nil {
+			og.pad.Close()
+		}
+	}
+	rt.gamepads = nil
+
 	if rt.textures != nil {
 		rt.textures.DestroyAll()
 		rt.textures = nil

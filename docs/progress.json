@@ -49,7 +49,12 @@
     "Unit and integration tests for gravity, resolveY (solid/one-way/ceiling), and full tilemap→physics→game pipeline",
     "Gameplay package with reusable Health component, overlap-based damage resolution, and PatrolComponent AI",
     "Pixel-quest example upgraded with patrolling enemies, player attack hitbox, HP tracking, and contact damage",
-    "TargetComponent for sight-based chase behavior and DropComponent for reusable enemy rewards"
+    "TargetComponent for sight-based chase behavior and DropComponent for reusable enemy rewards",
+    "Mouse input (position, buttons, wheel) via SDL3 across all platforms (Win32, X11, Wayland, macOS)",
+    "Gamepad input (axes, buttons, hotplug) via SDL3 gamepad subsystem across all platforms",
+    "MouseState and GamepadState types in input package with JustPressed/JustReleased edge detection",
+    "Context.Mouse() and Context.Gamepad(index) accessors for game code",
+    "Pixel-quest example updated with mouse crosshair and gamepad movement/jump/attack"
   ],
   "remarks": [],
   "next": [
@@ -57,7 +62,8 @@
     "Audio asset loading for WAV or OGG",
     "Font or text rendering path beyond debug overlay",
     "Asset cache and invalidation hooks",
-    "Hot reload for file-backed assets"
+    "Hot reload for file-backed assets",
+    "Wayland xkbcommon integration for richer keyboard layout handling"
   ],
   "public_packages": [
     "geom",

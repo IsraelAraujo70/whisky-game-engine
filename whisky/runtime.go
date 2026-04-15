@@ -65,10 +65,28 @@ type Context struct {
 	logger *log.Logger
 	quit   bool
 
+	mouse    *input.MouseState
+	gamepads [input.MaxGamepads]*input.GamepadState
+
 	platform   *sdl3.Runtime
 	debugLines []string
 	drawCmds   []render.DrawCmd
 	texSeq     render.TextureID
+}
+
+// Mouse returns the current mouse state (position, buttons, wheel).
+func (c *Context) Mouse() *input.MouseState {
+	return c.mouse
+}
+
+// Gamepad returns the state of the gamepad at the given index (0-3).
+// A non-nil state is always returned; check Connected() to see if a physical
+// device is plugged in.
+func (c *Context) Gamepad(index int) *input.GamepadState {
+	if index >= 0 && index < input.MaxGamepads {
+		return c.gamepads[index]
+	}
+	return input.NewGamepadState() // disconnected sentinel
 }
 
 func (c *Context) Quit() {
@@ -152,10 +170,17 @@ func Run(game Game, cfg Config) (err error) {
 	defer runtime.UnlockOSThread()
 
 	cfg = withDefaults(cfg)
+	var gamepads [input.MaxGamepads]*input.GamepadState
+	for i := range gamepads {
+		gamepads[i] = input.NewGamepadState()
+	}
+
 	ctx := &Context{
-		Config: cfg,
-		Input:  input.NewState(),
-		Scene:  cfg.StartScene,
+		Config:   cfg,
+		Input:    input.NewState(),
+		Scene:    cfg.StartScene,
+		mouse:    input.NewMouseState(),
+		gamepads: gamepads,
 		Camera: &render.Camera2D{
 			Position: geom.Vec2{
 				X: float64(cfg.VirtualWidth) / 2,
@@ -203,10 +228,17 @@ func Run(game Game, cfg Config) (err error) {
 	ticker := time.NewTicker(time.Second / time.Duration(cfg.TargetFPS))
 	defer ticker.Stop()
 
+	// Discover gamepads that were already connected before the loop started.
+	if platform != nil {
+		platform.OpenExistingGamepads(ctx.gamepads)
+	}
+
 	for {
 		if platform != nil {
 			platform.UpdateInput(ctx.Input)
-			if platform.PumpEvents() {
+			platform.UpdateMouse(ctx.mouse)
+			platform.UpdateGamepads(ctx.gamepads)
+			if platform.PumpEvents(ctx.mouse, ctx.gamepads) {
 				ctx.Quit()
 			}
 		}
@@ -241,6 +273,10 @@ func Run(game Game, cfg Config) (err error) {
 		ctx.drawCmds = ctx.drawCmds[:0]
 
 		ctx.Input.NextFrame()
+		ctx.mouse.NextFrame()
+		for i := 0; i < input.MaxGamepads; i++ {
+			ctx.gamepads[i].NextFrame()
+		}
 		ctx.Frames++
 		<-ticker.C
 	}
