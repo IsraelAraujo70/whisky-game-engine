@@ -37,6 +37,27 @@ func TestNormalizeSurfaceTargetRejectsMissingHandleFields(t *testing.T) {
 	}
 }
 
+func TestNormalizeSurfaceTargetCocoa(t *testing.T) {
+	target, err := NormalizeSurfaceTarget(SurfaceTarget{
+		Window: platformapi.NativeWindowHandle{
+			Kind:   platformapi.NativeWindowKindCocoa,
+			Window: 0x1000,
+			View:   0x2000,
+			Layer:  0x3000,
+		},
+		Extent: Extent2D{Width: 1440, Height: 900},
+	})
+	if err != nil {
+		t.Fatalf("expected valid cocoa target, got error: %v", err)
+	}
+	if target.Window.Kind != platformapi.NativeWindowKindCocoa {
+		t.Fatalf("expected cocoa kind, got %q", target.Window.Kind)
+	}
+	if target.Window.View != 0x2000 {
+		t.Fatalf("expected cocoa view handle 0x2000, got %#x", target.Window.View)
+	}
+}
+
 func TestNormalizeSwapchainDescriptorDefaults(t *testing.T) {
 	desc, err := NormalizeSwapchainDescriptor(SwapchainDescriptor{}, Extent2D{Width: 1920, Height: 1080})
 	if err != nil {

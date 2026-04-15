@@ -86,6 +86,10 @@ func validateNativeWindowHandle(handle platformapi.NativeWindowHandle) error {
 		if handle.Display == 0 || handle.Window == 0 {
 			return fmt.Errorf("%w: wayland handle requires display and surface", ErrInvalidSurfaceTarget)
 		}
+	case platformapi.NativeWindowKindCocoa:
+		if handle.Window == 0 || handle.View == 0 {
+			return fmt.Errorf("%w: cocoa handle requires window and view", ErrInvalidSurfaceTarget)
+		}
 	default:
 		return fmt.Errorf("%w: unsupported native window kind %q", ErrInvalidSurfaceTarget, handle.Kind)
 	}
