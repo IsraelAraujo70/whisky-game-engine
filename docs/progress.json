@@ -72,7 +72,8 @@
     "Generic RHI contract covering ShaderModule, Pipeline, Buffer, Texture, DescriptorSet, CommandBuffer, Queue with descriptor types (BufferUsage, TextureUsage, VertexLayout, BlendState, PipelineDescriptor, CompareOp, PrimitiveTopology)",
     "Vulkan backend refactored to implement the generic RHI GPU contract (ShaderModule, Buffer, Queue fully functional; Pipeline/Texture stubbed with validation)",
     "Metal backend RHI skeleton with placeholder types for all GPU contract interfaces (darwin build tag)",
-    "Audio engine with WAV and OGG Vorbis decoders, mixer with volume/pan/loop/pitch, and cross-platform output via oto/v3"
+    "Audio engine with WAV and OGG Vorbis decoders, mixer with volume/pan/loop/pitch, and cross-platform output via oto/v3",
+    "Mouse and gamepad input API (MouseState, GamepadState with 15 buttons and 6 axes, Xbox-style naming) in the public input package; platform capture still to be wired in each native backend"
   ],
   "remarks": [
     "Long-term engine direction is now explicit in code as well as docs: no SDL3 renderer fallback remains in the runtime; the desktop path is native windows plus Vulkan, with Metal planned later for macOS."
@@ -80,7 +81,8 @@
   "next": [
     "Phase 4: deepen the Vulkan renderer with texture-atlas friendly draw sorting and lower-overhead descriptor/vertex streaming",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",
-    "Wayland pointer/mouse support and richer keyboard layout handling (xkbcommon instead of the current minimal evdev mapping)",
+    "Wire MouseState/GamepadState capture into each native backend (Win32 WM_*, X11 Button/Motion, Wayland wl_pointer, macOS NSEvent; XInput/js/GameController for gamepad)",
+    "Wayland xkbcommon integration for richer keyboard layout handling (current mapping is minimal evdev)",
     "Asset cache and invalidation hooks",
     "Hot reload for file-backed assets"
   ],
