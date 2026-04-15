@@ -71,7 +71,8 @@
     "Lower-overhead 2D batching by merging contiguous draw runs that share the same texture while preserving draw order",
     "Generic RHI contract covering ShaderModule, Pipeline, Buffer, Texture, DescriptorSet, CommandBuffer, Queue with descriptor types (BufferUsage, TextureUsage, VertexLayout, BlendState, PipelineDescriptor, CompareOp, PrimitiveTopology)",
     "Vulkan backend refactored to implement the generic RHI GPU contract (ShaderModule, Buffer, Queue fully functional; Pipeline/Texture stubbed with validation)",
-    "Metal backend RHI skeleton with placeholder types for all GPU contract interfaces (darwin build tag)"
+    "Metal backend RHI skeleton with placeholder types for all GPU contract interfaces (darwin build tag)",
+    "Audio engine with WAV and OGG Vorbis decoders, mixer with volume/pan/loop/pitch, and cross-platform output via oto/v3"
   ],
   "remarks": [
     "Long-term engine direction is now explicit in code as well as docs: no SDL3 renderer fallback remains in the runtime; the desktop path is native windows plus Vulkan, with Metal planned later for macOS."
@@ -80,7 +81,6 @@
     "Phase 4: deepen the Vulkan renderer with texture-atlas friendly draw sorting and lower-overhead descriptor/vertex streaming",
     "Phase 5: add a Direct3D 12 backend on Windows after the RHI contract is stable",
     "Wayland pointer/mouse support and richer keyboard layout handling (xkbcommon instead of the current minimal evdev mapping)",
-    "Audio asset loading for WAV or OGG",
     "Asset cache and invalidation hooks",
     "Hot reload for file-backed assets"
   ],
@@ -92,7 +92,8 @@
     "render",
     "scene",
     "tilemap",
-    "whisky"
+    "whisky",
+    "audio"
   ],
   "cli_commands": {
     "whisky new <name-or-path>": "Create a new Whisky game project and run go mod tidy inside it",
