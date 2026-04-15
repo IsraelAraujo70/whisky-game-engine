@@ -10,4 +10,7 @@ require (
 	golang.org/x/sys v0.36.0
 )
 
-require github.com/jfreymuth/vorbis v1.0.2 // indirect
+require (
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/jfreymuth/vorbis v1.0.2 // indirect
+)
