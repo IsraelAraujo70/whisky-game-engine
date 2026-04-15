@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/IsraelAraujo70/whisky-game-engine/audio"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
 	backendapi "github.com/IsraelAraujo70/whisky-game-engine/internal/backend"
@@ -54,6 +55,10 @@ type Config struct {
 	// GravityY is the downward acceleration applied per second (px/s²).
 	// Zero means no gravity. Games read this via ctx.Config.GravityY.
 	GravityY float64
+	// Audio configures the audio engine. If Audio.Enabled is false (or left
+	// at the zero value), audio is initialised with sensible defaults
+	// (enabled, 32 channels, 48 kHz).
+	Audio audio.Config
 }
 
 type Context struct {
@@ -66,11 +71,17 @@ type Context struct {
 	logger *log.Logger
 	quit   bool
 
-	platform   platformapi.Platform
-	renderer   platformapi.Renderer
-	debugLines []string
-	drawCmds   []render.DrawCmd
-	texSeq     render.TextureID
+	platform    platformapi.Platform
+	renderer    platformapi.Renderer
+	audioEngine *audio.Engine
+	debugLines  []string
+	drawCmds    []render.DrawCmd
+	texSeq      render.TextureID
+}
+
+// Audio returns the audio engine, or nil if audio is disabled.
+func (c *Context) Audio() *audio.Engine {
+	return c.audioEngine
 }
 
 func (c *Context) Quit() {
@@ -192,6 +203,19 @@ func Run(game Game, cfg Config) (err error) {
 	ctx.platform = backend
 	ctx.renderer = backend
 
+	// --- Audio engine ---
+	audioEngine, audioErr := audio.Init(cfg.Audio)
+	if audioErr != nil {
+		ctx.logger.Printf("audio init failed (continuing without audio): %v", audioErr)
+	} else {
+		ctx.audioEngine = audioEngine
+		defer func() {
+			if shutErr := audioEngine.Shutdown(); shutErr != nil && err == nil {
+				err = shutErr
+			}
+		}()
+	}
+
 	if err := game.Load(ctx); err != nil {
 		return err
 	}
@@ -270,6 +294,11 @@ func withDefaults(cfg Config) Config {
 	}
 	if cfg.ClearColor == (geom.Color{}) {
 		cfg.ClearColor = geom.RGBA(0.08, 0.08, 0.1, 1)
+	}
+
+	// Audio defaults: enabled with 32 channels at 48 kHz.
+	if !cfg.Audio.Enabled && cfg.Audio.Channels == 0 && cfg.Audio.SampleRate == 0 {
+		cfg.Audio.Enabled = true
 	}
 
 	if cfg.KeyMap == nil {
