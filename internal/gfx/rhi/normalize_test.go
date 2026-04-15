@@ -93,3 +93,211 @@ func TestNormalizeSwapchainDescriptorRejectsInvalidFallback(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSwapchainDescriptor, got %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// BufferDescriptor
+// ---------------------------------------------------------------------------
+
+func TestNormalizeBufferDescriptorValid(t *testing.T) {
+	desc, err := NormalizeBufferDescriptor(BufferDescriptor{
+		Size:  1024,
+		Usage: BufferUsageVertex,
+	})
+	if err != nil {
+		t.Fatalf("expected valid buffer descriptor, got error: %v", err)
+	}
+	if desc.Size != 1024 {
+		t.Fatalf("expected size 1024, got %d", desc.Size)
+	}
+}
+
+func TestNormalizeBufferDescriptorRejectsZeroSize(t *testing.T) {
+	_, err := NormalizeBufferDescriptor(BufferDescriptor{
+		Size:  0,
+		Usage: BufferUsageVertex,
+	})
+	if !errors.Is(err, ErrInvalidBufferDescriptor) {
+		t.Fatalf("expected ErrInvalidBufferDescriptor, got %v", err)
+	}
+}
+
+func TestNormalizeBufferDescriptorRejectsNoUsage(t *testing.T) {
+	_, err := NormalizeBufferDescriptor(BufferDescriptor{
+		Size:  256,
+		Usage: 0,
+	})
+	if !errors.Is(err, ErrInvalidBufferDescriptor) {
+		t.Fatalf("expected ErrInvalidBufferDescriptor, got %v", err)
+	}
+}
+
+func TestNormalizeBufferDescriptorCombinedUsage(t *testing.T) {
+	desc, err := NormalizeBufferDescriptor(BufferDescriptor{
+		Size:  512,
+		Usage: BufferUsageVertex | BufferUsageStaging,
+	})
+	if err != nil {
+		t.Fatalf("expected valid descriptor, got error: %v", err)
+	}
+	if desc.Usage&BufferUsageVertex == 0 || desc.Usage&BufferUsageStaging == 0 {
+		t.Fatalf("expected combined usage flags, got %d", desc.Usage)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TextureDescriptor
+// ---------------------------------------------------------------------------
+
+func TestNormalizeTextureDescriptorDefaults(t *testing.T) {
+	desc, err := NormalizeTextureDescriptor(TextureDescriptor{
+		Width:  128,
+		Height: 64,
+	})
+	if err != nil {
+		t.Fatalf("expected valid texture descriptor, got error: %v", err)
+	}
+	if desc.Format != PixelFormatRGBA8Unorm {
+		t.Fatalf("expected default format %q, got %q", PixelFormatRGBA8Unorm, desc.Format)
+	}
+	if desc.Usage != TextureUsageSampled {
+		t.Fatalf("expected default usage TextureUsageSampled, got %d", desc.Usage)
+	}
+}
+
+func TestNormalizeTextureDescriptorRejectsZeroDimension(t *testing.T) {
+	_, err := NormalizeTextureDescriptor(TextureDescriptor{
+		Width:  0,
+		Height: 256,
+	})
+	if !errors.Is(err, ErrInvalidTextureDescriptor) {
+		t.Fatalf("expected ErrInvalidTextureDescriptor, got %v", err)
+	}
+}
+
+func TestNormalizeTextureDescriptorPreservesExplicitFormat(t *testing.T) {
+	desc, err := NormalizeTextureDescriptor(TextureDescriptor{
+		Width:  32,
+		Height: 32,
+		Format: PixelFormatBGRA8SRGB,
+		Usage:  TextureUsageRenderTarget,
+	})
+	if err != nil {
+		t.Fatalf("expected valid texture descriptor, got error: %v", err)
+	}
+	if desc.Format != PixelFormatBGRA8SRGB {
+		t.Fatalf("expected preserved format %q, got %q", PixelFormatBGRA8SRGB, desc.Format)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PipelineDescriptor
+// ---------------------------------------------------------------------------
+
+type mockShaderModule struct {
+	stage ShaderStage
+}
+
+func (m *mockShaderModule) Backend() BackendKind { return BackendKindVulkan }
+func (m *mockShaderModule) Stage() ShaderStage   { return m.stage }
+func (m *mockShaderModule) Destroy() error       { return nil }
+
+func TestNormalizePipelineDescriptorValid(t *testing.T) {
+	desc := PipelineDescriptor{
+		VertexShader:   &mockShaderModule{stage: ShaderStageVertex},
+		FragmentShader: &mockShaderModule{stage: ShaderStageFragment},
+		VertexLayout: VertexLayout{
+			Stride: 32,
+			Attributes: []VertexAttribute{
+				{Location: 0, Format: VertexFormatFloat32x2, Offset: 0},
+				{Location: 1, Format: VertexFormatFloat32x2, Offset: 8},
+			},
+		},
+	}
+	_, err := NormalizePipelineDescriptor(desc)
+	if err != nil {
+		t.Fatalf("expected valid pipeline descriptor, got error: %v", err)
+	}
+}
+
+func TestNormalizePipelineDescriptorRejectsNilVertexShader(t *testing.T) {
+	desc := PipelineDescriptor{
+		FragmentShader: &mockShaderModule{stage: ShaderStageFragment},
+		VertexLayout: VertexLayout{
+			Stride: 32,
+			Attributes: []VertexAttribute{
+				{Location: 0, Format: VertexFormatFloat32x2, Offset: 0},
+			},
+		},
+	}
+	_, err := NormalizePipelineDescriptor(desc)
+	if !errors.Is(err, ErrInvalidPipelineDescriptor) {
+		t.Fatalf("expected ErrInvalidPipelineDescriptor, got %v", err)
+	}
+}
+
+func TestNormalizePipelineDescriptorRejectsNilFragmentShader(t *testing.T) {
+	desc := PipelineDescriptor{
+		VertexShader: &mockShaderModule{stage: ShaderStageVertex},
+		VertexLayout: VertexLayout{
+			Stride: 32,
+			Attributes: []VertexAttribute{
+				{Location: 0, Format: VertexFormatFloat32x2, Offset: 0},
+			},
+		},
+	}
+	_, err := NormalizePipelineDescriptor(desc)
+	if !errors.Is(err, ErrInvalidPipelineDescriptor) {
+		t.Fatalf("expected ErrInvalidPipelineDescriptor, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VertexLayout
+// ---------------------------------------------------------------------------
+
+func TestValidateVertexLayoutValid(t *testing.T) {
+	err := ValidateVertexLayout(VertexLayout{
+		Stride: 32,
+		Attributes: []VertexAttribute{
+			{Location: 0, Format: VertexFormatFloat32x2, Offset: 0},
+			{Location: 1, Format: VertexFormatFloat32x4, Offset: 8},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected valid vertex layout, got error: %v", err)
+	}
+}
+
+func TestValidateVertexLayoutRejectsZeroStride(t *testing.T) {
+	err := ValidateVertexLayout(VertexLayout{
+		Stride: 0,
+		Attributes: []VertexAttribute{
+			{Location: 0, Format: VertexFormatFloat32x2, Offset: 0},
+		},
+	})
+	if !errors.Is(err, ErrInvalidVertexLayout) {
+		t.Fatalf("expected ErrInvalidVertexLayout, got %v", err)
+	}
+}
+
+func TestValidateVertexLayoutRejectsNoAttributes(t *testing.T) {
+	err := ValidateVertexLayout(VertexLayout{
+		Stride:     32,
+		Attributes: nil,
+	})
+	if !errors.Is(err, ErrInvalidVertexLayout) {
+		t.Fatalf("expected ErrInvalidVertexLayout, got %v", err)
+	}
+}
+
+func TestValidateVertexLayoutRejectsOffsetBeyondStride(t *testing.T) {
+	err := ValidateVertexLayout(VertexLayout{
+		Stride: 16,
+		Attributes: []VertexAttribute{
+			{Location: 0, Format: VertexFormatFloat32x2, Offset: 20},
+		},
+	})
+	if !errors.Is(err, ErrInvalidVertexLayout) {
+		t.Fatalf("expected ErrInvalidVertexLayout, got %v", err)
+	}
+}

@@ -68,11 +68,13 @@
     "Runtime draw-command consumption on Vulkan for FillRect and SpriteCmd using a textured quad pipeline, dynamic vertex uploads, per-texture descriptors, and PNG texture upload to GPU memory",
     "Virtual-resolution viewport mapping moved into the Vulkan renderer path, including centered letterboxing and pixel-perfect scaling policy",
     "GPU debug/text overlay path using a bitmap font atlas generated at renderer startup and consumed through the same Vulkan quad pipeline",
-    "Lower-overhead 2D batching by merging contiguous draw runs that share the same texture while preserving draw order"
+    "Lower-overhead 2D batching by merging contiguous draw runs that share the same texture while preserving draw order",
+    "Generic RHI contract covering ShaderModule, Pipeline, Buffer, Texture, DescriptorSet, CommandBuffer, Queue with descriptor types (BufferUsage, TextureUsage, VertexLayout, BlendState, PipelineDescriptor, CompareOp, PrimitiveTopology)",
+    "Vulkan backend refactored to implement the generic RHI GPU contract (ShaderModule, Buffer, Queue fully functional; Pipeline/Texture stubbed with validation)",
+    "Metal backend RHI skeleton with placeholder types for all GPU contract interfaces (darwin build tag)"
   ],
   "remarks": [
-    "Long-term engine direction is now explicit in code as well as docs: no SDL3 renderer fallback remains in the runtime; the desktop path is native windows plus Vulkan, with Metal planned later for macOS.",
-    "The current Vulkan renderer intentionally focuses on rectangles and sprites first; debug text/overlay rendering still needs its own GPU path."
+    "Long-term engine direction is now explicit in code as well as docs: no SDL3 renderer fallback remains in the runtime; the desktop path is native windows plus Vulkan, with Metal planned later for macOS."
   ],
   "next": [
     "Phase 4: deepen the Vulkan renderer with texture-atlas friendly draw sorting and lower-overhead descriptor/vertex streaming",
