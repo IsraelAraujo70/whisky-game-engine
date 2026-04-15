@@ -10,6 +10,10 @@ import (
 var (
 	ErrInvalidSurfaceTarget       = errors.New("rhi: invalid surface target")
 	ErrInvalidSwapchainDescriptor = errors.New("rhi: invalid swapchain descriptor")
+	ErrInvalidBufferDescriptor    = errors.New("rhi: invalid buffer descriptor")
+	ErrInvalidTextureDescriptor   = errors.New("rhi: invalid texture descriptor")
+	ErrInvalidPipelineDescriptor  = errors.New("rhi: invalid pipeline descriptor")
+	ErrInvalidVertexLayout        = errors.New("rhi: invalid vertex layout")
 )
 
 func NormalizeSurfaceTarget(target SurfaceTarget) (SurfaceTarget, error) {
@@ -70,6 +74,84 @@ func NormalizeSwapchainDescriptor(desc SwapchainDescriptor, fallback Extent2D) (
 	}
 
 	return normalized, nil
+}
+
+// NormalizeBufferDescriptor validates a BufferDescriptor and fills defaults.
+func NormalizeBufferDescriptor(desc BufferDescriptor) (BufferDescriptor, error) {
+	if desc.Size <= 0 {
+		return BufferDescriptor{}, fmt.Errorf(
+			"%w: size must be positive, got %d",
+			ErrInvalidBufferDescriptor,
+			desc.Size,
+		)
+	}
+	if desc.Usage == 0 {
+		return BufferDescriptor{}, fmt.Errorf(
+			"%w: at least one usage flag must be set",
+			ErrInvalidBufferDescriptor,
+		)
+	}
+	return desc, nil
+}
+
+// NormalizeTextureDescriptor validates a TextureDescriptor and fills defaults.
+func NormalizeTextureDescriptor(desc TextureDescriptor) (TextureDescriptor, error) {
+	if desc.Width <= 0 || desc.Height <= 0 {
+		return TextureDescriptor{}, fmt.Errorf(
+			"%w: dimensions must be positive, got %dx%d",
+			ErrInvalidTextureDescriptor,
+			desc.Width,
+			desc.Height,
+		)
+	}
+	normalized := desc
+	if normalized.Format == PixelFormatUnknown {
+		normalized.Format = PixelFormatRGBA8Unorm
+	}
+	if normalized.Usage == 0 {
+		normalized.Usage = TextureUsageSampled
+	}
+	return normalized, nil
+}
+
+// NormalizePipelineDescriptor validates a PipelineDescriptor and fills defaults.
+func NormalizePipelineDescriptor(desc PipelineDescriptor) (PipelineDescriptor, error) {
+	if desc.VertexShader == nil {
+		return PipelineDescriptor{}, fmt.Errorf(
+			"%w: vertex shader is required",
+			ErrInvalidPipelineDescriptor,
+		)
+	}
+	if desc.FragmentShader == nil {
+		return PipelineDescriptor{}, fmt.Errorf(
+			"%w: fragment shader is required",
+			ErrInvalidPipelineDescriptor,
+		)
+	}
+	if err := ValidateVertexLayout(desc.VertexLayout); err != nil {
+		return PipelineDescriptor{}, err
+	}
+	return desc, nil
+}
+
+// ValidateVertexLayout checks that a VertexLayout is well-formed.
+func ValidateVertexLayout(layout VertexLayout) error {
+	if layout.Stride == 0 {
+		return fmt.Errorf("%w: stride must be positive", ErrInvalidVertexLayout)
+	}
+	if len(layout.Attributes) == 0 {
+		return fmt.Errorf("%w: at least one attribute is required", ErrInvalidVertexLayout)
+	}
+	for i, attr := range layout.Attributes {
+		if attr.Offset >= layout.Stride {
+			return fmt.Errorf(
+				"%w: attribute %d offset %d exceeds stride %d",
+				ErrInvalidVertexLayout,
+				i, attr.Offset, layout.Stride,
+			)
+		}
+	}
+	return nil
 }
 
 func validateNativeWindowHandle(handle platformapi.NativeWindowHandle) error {
