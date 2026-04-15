@@ -92,6 +92,51 @@ func (tc *textureCache) Get(id render.TextureID) *sdl.Texture {
 	return entry.tex
 }
 
+// ReuploadTexture replaces the GPU texture for an existing ID with new pixel
+// data decoded from img. The old SDL texture is destroyed. Returns an error if
+// the ID is unknown or the upload fails.
+func (tc *textureCache) ReuploadTexture(id render.TextureID, img image.Image) error {
+	existing, ok := tc.textures[id]
+	if !ok {
+		return nil // unknown ID — silently skip
+	}
+
+	nrgba := toNRGBA(img)
+	surface, err := sdl.CreateSurfaceFrom(
+		nrgba.Bounds().Dx(),
+		nrgba.Bounds().Dy(),
+		sdl.PIXELFORMAT_RGBA32,
+		nrgba.Pix,
+		nrgba.Stride,
+	)
+	if err != nil {
+		return err
+	}
+	defer surface.Destroy()
+
+	newTex, err := tc.renderer.CreateTextureFromSurface(surface)
+	if err != nil {
+		return err
+	}
+
+	// Destroy old texture and swap in the new one.
+	if existing.tex != nil {
+		existing.tex.Destroy()
+	}
+	tc.textures[id] = textureEntry{
+		tex: newTex,
+		w:   nrgba.Bounds().Dx(),
+		h:   nrgba.Bounds().Dy(),
+	}
+	return nil
+}
+
+// IDForPath returns the texture ID currently associated with the given absolute
+// path, or 0 if none.
+func (tc *textureCache) IDForPath(absPath string) render.TextureID {
+	return tc.paths[absPath]
+}
+
 func (tc *textureCache) DestroyAll() {
 	for id, entry := range tc.textures {
 		if entry.tex != nil {

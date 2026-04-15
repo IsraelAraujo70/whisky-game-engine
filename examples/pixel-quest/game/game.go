@@ -66,6 +66,7 @@ type pixelQuest struct {
 }
 
 func Run() error {
+	assetsDir, _ := pixelQuestAssetsDir()
 	return whisky.Run(&pixelQuest{}, whisky.Config{
 		Title:         "Pixel Quest",
 		VirtualWidth:  320,
@@ -74,6 +75,7 @@ func Run() error {
 		TargetFPS:     60,
 		GravityY:      400.0, // px/s² downward
 		StartScene:    scene.New("pixel-quest"),
+		AssetsRoot:    assetsDir,
 		// KeyMap maps physical keys to semantic control names.
 		// Space and Up arrow both trigger jump.
 		KeyMap: whisky.KeyMap{

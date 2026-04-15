@@ -49,17 +49,18 @@
     "Unit and integration tests for gravity, resolveY (solid/one-way/ceiling), and full tilemap→physics→game pipeline",
     "Gameplay package with reusable Health component, overlap-based damage resolution, and PatrolComponent AI",
     "Pixel-quest example upgraded with patrolling enemies, player attack hitbox, HP tracking, and contact damage",
-    "TargetComponent for sight-based chase behavior and DropComponent for reusable enemy rewards"
+    "TargetComponent for sight-based chase behavior and DropComponent for reusable enemy rewards",
+    "Asset cache with LRU and path-based invalidation",
+    "Hot-reload pipeline with fsnotify watcher and automatic GPU texture reupload"
   ],
   "remarks": [],
   "next": [
     "Window resize awareness and virtual-resolution policy",
     "Audio asset loading for WAV or OGG",
-    "Font or text rendering path beyond debug overlay",
-    "Asset cache and invalidation hooks",
-    "Hot reload for file-backed assets"
+    "Font or text rendering path beyond debug overlay"
   ],
   "public_packages": [
+    "assets",
     "geom",
     "gameplay",
     "input",

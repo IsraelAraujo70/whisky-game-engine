@@ -1,6 +1,7 @@
 package sdl3
 
 import (
+	"image"
 	"os"
 
 	"github.com/Zyko0/go-sdl3/sdl"
@@ -165,6 +166,17 @@ func (rt *Runtime) PumpEvents() bool {
 
 func (rt *Runtime) LoadTexture(path string) (render.TextureID, int, int, error) {
 	return rt.textures.Load(path)
+}
+
+// ReuploadTexture replaces the GPU texture for the given absolute path with new
+// pixel data from img. This is used by the hot-reload pipeline to update
+// sprites without restarting the game.
+func (rt *Runtime) ReuploadTexture(absPath string, img image.Image) error {
+	id := rt.textures.IDForPath(absPath)
+	if id == 0 {
+		return nil // path not loaded yet — nothing to do
+	}
+	return rt.textures.ReuploadTexture(id, img)
 }
 
 func (rt *Runtime) DrawFrame(clearColor geom.Color, cmds []render.DrawCmd, lines []string) error {

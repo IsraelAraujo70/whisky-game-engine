@@ -2,12 +2,18 @@ package whisky
 
 import (
 	"errors"
+	"image"
+	_ "image/jpeg"
+	"image/png"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/IsraelAraujo70/whisky-game-engine/assets"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
 	"github.com/IsraelAraujo70/whisky-game-engine/internal/platform/sdl3"
@@ -53,6 +59,27 @@ type Config struct {
 	// GravityY is the downward acceleration applied per second (px/s²).
 	// Zero means no gravity. Games read this via ctx.Config.GravityY.
 	GravityY float64
+
+	// HotReload enables the file-system watcher that automatically invalidates
+	// cached assets and reuploads GPU textures when files under AssetsRoot
+	// change on disk. Default is true.
+	HotReload *bool
+
+	// AssetsRoot is the root directory for game assets. When empty, hot-reload
+	// is disabled but the asset cache is still available.
+	AssetsRoot string
+
+	// CacheMaxSize sets the maximum number of entries in the asset cache.
+	// Zero or negative means unlimited. Default is 256.
+	CacheMaxSize int
+}
+
+// hotReloadEnabled returns true if hot-reload should be enabled.
+func (c Config) hotReloadEnabled() bool {
+	if c.HotReload != nil {
+		return *c.HotReload
+	}
+	return true // default on
 }
 
 type Context struct {
@@ -69,6 +96,8 @@ type Context struct {
 	debugLines []string
 	drawCmds   []render.DrawCmd
 	texSeq     render.TextureID
+	cache      *assets.Cache
+	watcher    *assets.Watcher
 }
 
 func (c *Context) Quit() {
@@ -87,11 +116,51 @@ func (c *Context) SetDebugText(lines ...string) {
 	c.debugLines = append(c.debugLines[:0], lines...)
 }
 
+// Assets returns the engine's asset cache. It is always non-nil after Run
+// begins, regardless of whether hot-reload is enabled.
+func (c *Context) Assets() *assets.Cache {
+	return c.cache
+}
+
+// textureResult is the cached representation of a loaded texture.
+type textureResult struct {
+	ID     render.TextureID
+	Width  int
+	Height int
+}
+
+// LoadTexture loads a PNG (or JPEG) image from path into a GPU texture. Results
+// are cached by the asset cache so repeated calls with the same path are free.
 func (c *Context) LoadTexture(path string) (render.TextureID, int, int, error) {
 	if c.platform == nil {
 		c.texSeq++
 		return c.texSeq, 0, 0, nil
 	}
+
+	// Compute cache key: relative to AssetsRoot when possible, otherwise absolute.
+	cacheKey := path
+	if c.cache != nil && c.cache.AssetsRoot != "" {
+		if absPath, err := filepath.Abs(path); err == nil {
+			if rel, err := filepath.Rel(c.cache.AssetsRoot, absPath); err == nil && !strings.HasPrefix(rel, "..") {
+				cacheKey = filepath.ToSlash(rel)
+			}
+		}
+	}
+
+	if c.cache != nil {
+		result, err := assets.Get(c.cache, cacheKey, func(_ string) (textureResult, error) {
+			id, w, h, loadErr := c.platform.LoadTexture(path)
+			if loadErr != nil {
+				return textureResult{}, loadErr
+			}
+			return textureResult{ID: id, Width: w, Height: h}, nil
+		})
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		return result.ID, result.Width, result.Height, nil
+	}
+
 	return c.platform.LoadTexture(path)
 }
 
@@ -152,6 +221,16 @@ func Run(game Game, cfg Config) (err error) {
 	defer runtime.UnlockOSThread()
 
 	cfg = withDefaults(cfg)
+	logger := log.New(os.Stdout, "[whisky] ", 0)
+
+	// --- Asset cache ---
+	cache := assets.NewCache(cfg.CacheMaxSize)
+	if cfg.AssetsRoot != "" {
+		if abs, absErr := filepath.Abs(cfg.AssetsRoot); absErr == nil {
+			cache.AssetsRoot = abs
+		}
+	}
+
 	ctx := &Context{
 		Config: cfg,
 		Input:  input.NewState(),
@@ -163,7 +242,8 @@ func Run(game Game, cfg Config) (err error) {
 			},
 		},
 		Delta:  1.0 / float64(cfg.TargetFPS),
-		logger: log.New(os.Stdout, "[whisky] ", 0),
+		logger: logger,
+		cache:  cache,
 	}
 
 	if ctx.Scene == nil {
@@ -188,6 +268,38 @@ func Run(game Game, cfg Config) (err error) {
 		}()
 	}
 	ctx.platform = platform
+
+	// --- Hot-reload watcher ---
+	if cfg.hotReloadEnabled() && cfg.AssetsRoot != "" {
+		w, wErr := assets.NewWatcher(cfg.AssetsRoot, cache, logger)
+		if wErr != nil {
+			logger.Printf("[assets] warning: could not start watcher: %v", wErr)
+		} else if w != nil {
+			ctx.watcher = w
+			defer func() { _ = w.Close() }()
+
+			// Register texture reupload handler.
+			if platform != nil {
+				w.SetOnReload(func(relPath string) {
+					lower := strings.ToLower(relPath)
+					if !strings.HasSuffix(lower, ".png") && !strings.HasSuffix(lower, ".jpg") && !strings.HasSuffix(lower, ".jpeg") {
+						return
+					}
+					absPath := filepath.Join(cache.AssetsRoot, filepath.FromSlash(relPath))
+					img, decodeErr := decodeImage(absPath)
+					if decodeErr != nil {
+						logger.Printf("[assets] hot-reload decode error %s: %v", relPath, decodeErr)
+						return
+					}
+					if reupErr := platform.ReuploadTexture(absPath, img); reupErr != nil {
+						logger.Printf("[assets] hot-reload reupload error %s: %v", relPath, reupErr)
+						return
+					}
+					logger.Printf("[assets] hot-reloaded %s", relPath)
+				})
+			}
+		}
+	}
 
 	if err := game.Load(ctx); err != nil {
 		return err
@@ -268,20 +380,23 @@ func withDefaults(cfg Config) Config {
 	if cfg.ClearColor == (geom.Color{}) {
 		cfg.ClearColor = geom.RGBA(0.08, 0.08, 0.1, 1)
 	}
+	if cfg.CacheMaxSize == 0 {
+		cfg.CacheMaxSize = 256
+	}
 
 	if cfg.KeyMap == nil {
 		cfg.KeyMap = KeyMap{
-			"w":     "move_up",
-			"up":    "move_up",
-			"s":     "move_down",
-			"down":  "move_down",
-			"a":     "move_left",
-			"left":  "move_left",
-			"d":     "move_right",
-			"right": "move_right",
-			"space": "action",
+			"w":      "move_up",
+			"up":     "move_up",
+			"s":      "move_down",
+			"down":   "move_down",
+			"a":      "move_left",
+			"left":   "move_left",
+			"d":      "move_right",
+			"right":  "move_right",
+			"space":  "action",
 			"lshift": "sprint",
-			"enter": "confirm",
+			"enter":  "confirm",
 		}
 	}
 
@@ -300,4 +415,21 @@ func (c *Context) overlayLines() []string {
 	}
 
 	return lines
+}
+
+// decodeImage opens and decodes a PNG or JPEG file.
+func decodeImage(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".png") {
+		return png.Decode(f)
+	}
+	// JPEG and other formats handled by image.Decode (jpeg registered via blank import).
+	img, _, err := image.Decode(f)
+	return img, err
 }
