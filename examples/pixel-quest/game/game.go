@@ -236,6 +236,9 @@ func (g *pixelQuest) initLevel(ctx *whisky.Context) {
 		{Kind: "xp", MinAmount: 2, MaxAmount: 4, Chance: 1},
 		{Kind: "item", ID: "slime_gel", MinAmount: 1, MaxAmount: 1, Chance: 0.5},
 	})
+
+	// --- Camera init ---
+	g.updateCamera(ctx)
 }
 
 func (g *pixelQuest) restartLevel() {
@@ -290,6 +293,13 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 		return nil
 	}
 
+	// Reset camera to screen center in menus so UI draws in screen space.
+	if g.state != statePlaying && ctx.Camera != nil {
+		vw, vh := ctx.VirtualSize()
+		ctx.Camera.Position.X = vw / 2
+		ctx.Camera.Position.Y = vh / 2
+	}
+
 	switch g.state {
 	case stateTitle:
 		g.titleScreen.Update(g, ctx, dt)
@@ -341,7 +351,54 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	return nil
 }
 
+func (g *pixelQuest) updateCamera(ctx *whisky.Context) {
+	if ctx.Camera == nil {
+		return
+	}
+	pp := g.player.WorldPosition()
+	vw, vh := ctx.VirtualSize()
+	targetX := pp.X + playerW/2
+	targetY := pp.Y + playerH/2
+
+	// Clamp camera so the viewport stays within the tilemap bounds.
+	mapW := float64(g.tileMap.Width * g.tileMap.TileSet.TileWidth)
+	mapH := float64(g.tileMap.Height * g.tileMap.TileSet.TileHeight)
+
+	minX := vw / 2
+	maxX := mapW - vw/2
+	minY := vh / 2
+	maxY := mapH - vh/2
+
+	if mapW <= vw {
+		// Map is narrower than screen: center horizontally.
+		targetX = mapW / 2
+	} else {
+		if targetX < minX {
+			targetX = minX
+		}
+		if targetX > maxX {
+			targetX = maxX
+		}
+	}
+
+	if mapH <= vh {
+		// Map is shorter than screen: center vertically.
+		targetY = mapH / 2
+	} else {
+		if targetY < minY {
+			targetY = minY
+		}
+		if targetY > maxY {
+			targetY = maxY
+		}
+	}
+
+	ctx.Camera.Position.X = targetX
+	ctx.Camera.Position.Y = targetY
+}
+
 func (g *pixelQuest) updatePlaying(ctx *whisky.Context, dt float64) error {
+	g.updateCamera(ctx)
 	playerAlive := g.playerHealth == nil || g.playerHealth.Alive()
 
 	// Pause toggle.

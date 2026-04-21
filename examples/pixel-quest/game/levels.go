@@ -188,6 +188,9 @@ func (g *pixelQuest) loadLevel(ctx *whisky.Context, levelIdx int) {
 	for _, es := range lvl.Enemies {
 		g.spawnEnemyByType(ctx.Scene.Root, es.ID, es.X, es.Y, es.Typ, es.HP, es.Speed, es.Drops)
 	}
+
+	// --- Camera init ---
+	g.updateCamera(ctx)
 }
 
 // screenLevelSelect is the level picker menu.
