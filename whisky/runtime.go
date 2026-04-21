@@ -4,10 +4,12 @@ import (
 	"errors"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
 
+	"github.com/IsraelAraujo70/whisky-game-engine/assets"
 	"github.com/IsraelAraujo70/whisky-game-engine/audio"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
@@ -59,6 +61,16 @@ type Config struct {
 	// at the zero value), audio is initialised with sensible defaults
 	// (enabled, 32 channels, 48 kHz).
 	Audio audio.Config
+	// AssetsRoot is the directory used to resolve relative asset paths.
+	// Empty means "assets" in the working directory.
+	AssetsRoot string
+	// HotReload starts an fsnotify watcher on AssetsRoot during development.
+	// When a file changes the engine invalidates the cache entry and re-uploads
+	// GPU textures automatically on the main thread.
+	HotReload bool
+	// CacheMaxSize is the LRU limit for the asset cache. Zero or negative
+	// means unlimited.
+	CacheMaxSize int
 }
 
 type Context struct {
@@ -68,15 +80,19 @@ type Context struct {
 	Camera *render.Camera2D
 	Delta  float64
 	Frames int
+	Assets *assets.Cache
 	logger *log.Logger
 	quit   bool
 
-	platform    platformapi.Platform
-	renderer    platformapi.Renderer
-	audioEngine *audio.Engine
-	debugLines  []string
-	drawCmds    []render.DrawCmd
-	texSeq      render.TextureID
+	platform      platformapi.Platform
+	renderer      platformapi.Renderer
+	backend       platformapi.Backend
+	audioEngine   *audio.Engine
+	assetWatcher  *assets.Watcher
+	reloadQueue   chan string
+	debugLines    []string
+	drawCmds      []render.DrawCmd
+	texSeq        render.TextureID
 }
 
 // Audio returns the audio engine, or nil if audio is disabled.
@@ -100,12 +116,60 @@ func (c *Context) SetDebugText(lines ...string) {
 	c.debugLines = append(c.debugLines[:0], lines...)
 }
 
+// Mouse returns the mouse input state. Never nil.
+func (c *Context) Mouse() *input.MouseState {
+	return c.Input.Mouse()
+}
+
+// Gamepad returns the gamepad input state for the given slot
+// (0 to input.MaxGamepads-1). Never nil, but may be disconnected.
+func (c *Context) Gamepad(index int) *input.GamepadState {
+	return c.Input.Gamepad(index)
+}
+
 func (c *Context) LoadTexture(path string) (render.TextureID, int, int, error) {
 	if c.renderer == nil {
 		c.texSeq++
 		return c.texSeq, 0, 0, nil
 	}
-	return c.renderer.LoadTexture(path)
+
+	rel, abs, err := c.resolveAssetPath(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	ct, err := assets.Get(c.Assets, rel, func(_ string) (cachedTexture, error) {
+		id, w, h, err := c.renderer.LoadTexture(abs)
+		if err != nil {
+			return cachedTexture{}, err
+		}
+		return cachedTexture{id: id, width: w, height: h}, nil
+	})
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return ct.id, ct.width, ct.height, nil
+}
+
+type cachedTexture struct {
+	id     render.TextureID
+	width  int
+	height int
+}
+
+func (c *Context) resolveAssetPath(path string) (rel string, abs string, err error) {
+	if filepath.IsAbs(path) {
+		abs = path
+		rel, err = filepath.Rel(c.Assets.AssetsRoot, abs)
+		if err != nil {
+			return "", "", err
+		}
+		rel = filepath.ToSlash(rel)
+		return rel, abs, nil
+	}
+	rel = filepath.ToSlash(path)
+	abs = filepath.Join(c.Assets.AssetsRoot, rel)
+	return rel, abs, nil
 }
 
 func (c *Context) VirtualSize() (w, h float64) {
@@ -138,6 +202,26 @@ func (c *Context) DrawRect(worldRect geom.Rect, color geom.Color) {
 	})
 }
 
+// DrawText queues a text string in world coordinates. The camera transform is
+// applied automatically, just like DrawRect. Scale multiplies the base glyph
+// dimensions (1.0 = native font size).
+func (c *Context) DrawText(text string, worldPos geom.Vec2, color geom.Color, scale float64) {
+	pos := worldPos
+	if c.Camera != nil {
+		vw, vh := c.VirtualSize()
+		pos = c.Camera.WorldToScreen(worldPos, vw, vh)
+	}
+	if scale <= 0 {
+		scale = 1
+	}
+	c.drawCmds = append(c.drawCmds, render.TextCmd{
+		Text:  text,
+		Pos:   pos,
+		Color: color,
+		Scale: scale,
+	})
+}
+
 func (c *Context) DrawSprite(texture render.TextureID, src, dst geom.Rect, flipH, flipV bool) {
 	drawDst := dst
 	if c.Camera != nil {
@@ -158,6 +242,76 @@ func (c *Context) DrawSprite(texture render.TextureID, src, dst geom.Rect, flipH
 		FlipH:   flipH,
 		FlipV:   flipV,
 	})
+}
+
+// DisplayController is a re-export of the platform interface for game-level access.
+type WindowMode = platformapi.WindowMode
+
+const (
+	WindowModeWindowed   = platformapi.WindowModeWindowed
+	WindowModeBorderless = platformapi.WindowModeBorderless
+	WindowModeFullscreen = platformapi.WindowModeFullscreen
+)
+
+// DisplayMode describes a supported resolution and refresh rate.
+type DisplayMode = platformapi.DisplayMode
+
+// MonitorInfo describes a connected display.
+type MonitorInfo = platformapi.MonitorInfo
+
+// displayController is the interface used by Context to control window display.
+type displayController interface {
+	SetWindowSize(width, height int) error
+	SetWindowMode(mode platformapi.WindowMode) error
+	Monitors() ([]platformapi.MonitorInfo, error)
+	MoveToMonitor(index int) error
+}
+
+// SetWindowSize resizes the OS window to the given dimensions.
+func (c *Context) SetWindowSize(width, height int) error {
+	dc := c.getDisplayController()
+	if dc == nil {
+		return platformapi.ErrNotSupported
+	}
+	return dc.SetWindowSize(width, height)
+}
+
+// SetWindowMode changes the window mode (windowed, borderless fullscreen, etc.).
+func (c *Context) SetWindowMode(mode WindowMode) error {
+	dc := c.getDisplayController()
+	if dc == nil {
+		return platformapi.ErrNotSupported
+	}
+	return dc.SetWindowMode(mode)
+}
+
+// Monitors returns the list of connected monitors with their supported modes.
+func (c *Context) Monitors() ([]MonitorInfo, error) {
+	dc := c.getDisplayController()
+	if dc == nil {
+		return nil, platformapi.ErrNotSupported
+	}
+	return dc.Monitors()
+}
+
+// MoveToMonitor moves the window to the specified monitor by index.
+func (c *Context) MoveToMonitor(index int) error {
+	dc := c.getDisplayController()
+	if dc == nil {
+		return platformapi.ErrNotSupported
+	}
+	return dc.MoveToMonitor(index)
+}
+
+func (c *Context) getDisplayController() displayController {
+	if c.backend == nil {
+		return nil
+	}
+	dc, ok := c.backend.(displayController)
+	if !ok {
+		return nil
+	}
+	return dc
 }
 
 func Run(game Game, cfg Config) (err error) {
@@ -183,6 +337,33 @@ func Run(game Game, cfg Config) (err error) {
 		ctx.Scene = scene.New(cfg.Title)
 	}
 
+	// --- Asset cache & hot-reload watcher ---
+	ctx.Assets = assets.NewCache(cfg.CacheMaxSize)
+	absRoot, err := filepath.Abs(cfg.AssetsRoot)
+	if err != nil {
+		return err
+	}
+	ctx.Assets.AssetsRoot = absRoot
+	ctx.reloadQueue = make(chan string, 64)
+
+	if cfg.HotReload {
+		watcher, werr := assets.NewWatcher(absRoot, ctx.Assets, ctx.logger)
+		if werr != nil {
+			return werr
+		}
+		if watcher != nil {
+			ctx.assetWatcher = watcher
+			watcher.SetOnReload(func(relPath string) {
+				select {
+				case ctx.reloadQueue <- relPath:
+				default:
+					ctx.logger.Printf("[assets] reload queue full, dropping %s", relPath)
+				}
+			})
+			defer func() { _ = watcher.Close() }()
+		}
+	}
+
 	var backend platformapi.Backend
 	if !cfg.Headless && os.Getenv("WHISKY_HEADLESS") != "1" {
 		backend, err = backendapi.NewDesktop(cfg.Title, cfg.WindowWidth, cfg.WindowHeight, map[string]string(cfg.KeyMap))
@@ -202,6 +383,7 @@ func Run(game Game, cfg Config) (err error) {
 	}
 	ctx.platform = backend
 	ctx.renderer = backend
+	ctx.backend = backend
 
 	// --- Audio engine ---
 	audioEngine, audioErr := audio.Init(cfg.Audio)
@@ -244,6 +426,22 @@ func Run(game Game, cfg Config) (err error) {
 
 		if cfg.MaxFrames > 0 && ctx.Frames >= cfg.MaxFrames {
 			return nil
+		}
+
+		// Drain hot-reload queue on the main thread
+	drain:
+		for {
+			select {
+			case relPath := <-ctx.reloadQueue:
+				ctx.Assets.Invalidate(relPath)
+				if _, _, _, err := ctx.LoadTexture(relPath); err != nil {
+					ctx.logger.Printf("[assets] hot-reload failed for %s: %v", relPath, err)
+				} else {
+					ctx.logger.Printf("[assets] hot-reloaded %s", relPath)
+				}
+			default:
+				break drain
+			}
 		}
 
 		if err := ctx.Scene.Update(ctx.Delta); err != nil {
@@ -299,6 +497,10 @@ func withDefaults(cfg Config) Config {
 	// Audio defaults: enabled with 32 channels at 48 kHz.
 	if !cfg.Audio.Enabled && cfg.Audio.Channels == 0 && cfg.Audio.SampleRate == 0 {
 		cfg.Audio.Enabled = true
+	}
+
+	if cfg.AssetsRoot == "" {
+		cfg.AssetsRoot = "assets"
 	}
 
 	if cfg.KeyMap == nil {

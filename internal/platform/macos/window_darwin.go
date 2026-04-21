@@ -126,6 +126,13 @@ type Window struct {
 	closed      atomic.Bool
 	width       atomic.Int32
 	height      atomic.Int32
+
+	mouseMu     sync.Mutex
+	mouseX      float64
+	mouseY      float64
+	mouseButtons [5]bool
+	mouseWheelX float64
+	mouseWheelY float64
 }
 
 var (
@@ -174,6 +181,19 @@ var (
 	selKeyCode                      = objc.RegisterName("keyCode")
 	selType                         = objc.RegisterName("type")
 	selClassLayer                   = objc.RegisterName("layer")
+	selLocationInWindow             = objc.RegisterName("locationInWindow")
+	selMouseDown                    = objc.RegisterName("mouseDown:")
+	selMouseUp                      = objc.RegisterName("mouseUp:")
+	selRightMouseDown               = objc.RegisterName("rightMouseDown:")
+	selRightMouseUp                 = objc.RegisterName("rightMouseUp:")
+	selOtherMouseDown               = objc.RegisterName("otherMouseDown:")
+	selOtherMouseUp                 = objc.RegisterName("otherMouseUp:")
+	selMouseMoved                   = objc.RegisterName("mouseMoved:")
+	selMouseDragged                 = objc.RegisterName("mouseDragged:")
+	selScrollWheel                  = objc.RegisterName("scrollWheel:")
+	selDeltaX                       = objc.RegisterName("deltaX")
+	selDeltaY                       = objc.RegisterName("deltaY")
+	selButtonNumber                 = objc.RegisterName("buttonNumber")
 )
 
 func New(title string, width, height int, keyMap map[string]string) (*Window, error) {
@@ -251,7 +271,6 @@ func (w *Window) UpdateInput(state *input.State) {
 		return
 	}
 	w.pressedMu.RLock()
-	defer w.pressedMu.RUnlock()
 	for _, binding := range w.keyBindings {
 		state.SetPressed(binding.control, false)
 	}
@@ -260,6 +279,26 @@ func (w *Window) UpdateInput(state *input.State) {
 			state.SetPressed(binding.control, true)
 		}
 	}
+	w.pressedMu.RUnlock()
+
+	w.mouseMu.Lock()
+	mx, my := w.mouseX, w.mouseY
+	mwx, mwy := w.mouseWheelX, w.mouseWheelY
+	buttons := w.mouseButtons
+	w.mouseWheelX = 0
+	w.mouseWheelY = 0
+	w.mouseMu.Unlock()
+
+	mouse := state.Mouse()
+	mouse.SetPosition(mx, my)
+	mouse.SetButton(input.MouseButtonLeft, buttons[0])
+	mouse.SetButton(input.MouseButtonRight, buttons[1])
+	mouse.SetButton(input.MouseButtonMiddle, buttons[2])
+	mouse.SetButton(input.MouseButtonX1, buttons[3])
+	mouse.SetButton(input.MouseButtonX2, buttons[4])
+	mouse.AddWheel(mwx, mwy)
+
+	pollGCControllers(state)
 }
 
 func (w *Window) PumpEvents() bool {
@@ -431,6 +470,15 @@ func ensureWindowDelegateClass() error {
 			{Cmd: selFlagsChanged, Fn: viewFlagsChanged},
 			{Cmd: selAcceptsFirstResponder, Fn: acceptsFirstResponder},
 			{Cmd: selCanBecomeKeyView, Fn: acceptsFirstResponder},
+			{Cmd: selMouseDown, Fn: viewMouseDown},
+			{Cmd: selMouseUp, Fn: viewMouseUp},
+			{Cmd: selRightMouseDown, Fn: viewRightMouseDown},
+			{Cmd: selRightMouseUp, Fn: viewRightMouseUp},
+			{Cmd: selOtherMouseDown, Fn: viewOtherMouseDown},
+			{Cmd: selOtherMouseUp, Fn: viewOtherMouseUp},
+			{Cmd: selMouseMoved, Fn: viewMouseMoved},
+			{Cmd: selMouseDragged, Fn: viewMouseMoved},
+			{Cmd: selScrollWheel, Fn: viewScrollWheel},
 		},
 	)
 	if err != nil {
@@ -534,4 +582,124 @@ func acceptsFirstResponder(self objc.ID, cmd objc.SEL) bool {
 	_ = self
 	_ = cmd
 	return true
+}
+
+func viewMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+		win.mouseMu.Lock()
+		win.mouseButtons[0] = true
+		win.mouseMu.Unlock()
+	}
+}
+
+func viewMouseUp(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+		win.mouseMu.Lock()
+		win.mouseButtons[0] = false
+		win.mouseMu.Unlock()
+	}
+}
+
+func viewRightMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+		win.mouseMu.Lock()
+		win.mouseButtons[1] = true
+		win.mouseMu.Unlock()
+	}
+}
+
+func viewRightMouseUp(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+		win.mouseMu.Lock()
+		win.mouseButtons[1] = false
+		win.mouseMu.Unlock()
+	}
+}
+
+func viewOtherMouseDown(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+		btn := int(objc.Send[int64](event, selButtonNumber))
+		win.mouseMu.Lock()
+		if btn == 2 {
+			win.mouseButtons[2] = true
+		} else if btn == 3 {
+			win.mouseButtons[3] = true
+		} else if btn == 4 {
+			win.mouseButtons[4] = true
+		}
+		win.mouseMu.Unlock()
+	}
+}
+
+func viewOtherMouseUp(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+		btn := int(objc.Send[int64](event, selButtonNumber))
+		win.mouseMu.Lock()
+		if btn == 2 {
+			win.mouseButtons[2] = false
+		} else if btn == 3 {
+			win.mouseButtons[3] = false
+		} else if btn == 4 {
+			win.mouseButtons[4] = false
+		}
+		win.mouseMu.Unlock()
+	}
+}
+
+func viewMouseMoved(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		win.updateMousePosition(event)
+	}
+}
+
+func viewScrollWheel(self objc.ID, cmd objc.SEL, event objc.ID) {
+	_ = self
+	_ = cmd
+	win := lookupWindowForEvent(event)
+	if win != nil {
+		dx := objc.Send[float64](event, selDeltaX)
+		dy := objc.Send[float64](event, selDeltaY)
+		win.mouseMu.Lock()
+		win.mouseWheelX += dx
+		win.mouseWheelY += dy
+		win.mouseMu.Unlock()
+	}
+}
+
+func (w *Window) updateMousePosition(event objc.ID) {
+	if w == nil || event == 0 {
+		return
+	}
+	pt := objc.Send[NSPoint](event, selLocationInWindow)
+	w.mouseMu.Lock()
+	w.mouseX = pt.X
+	w.mouseY = pt.Y
+	w.mouseMu.Unlock()
 }

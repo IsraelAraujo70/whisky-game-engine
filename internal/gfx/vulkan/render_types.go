@@ -68,8 +68,9 @@ const (
 	vkCommandBufferLevelPrimary = 0
 	vkSubpassContentsInline     = 0
 
-	vkCommandPoolCreateResetCommandBufferBit = 0x00000002
-	vkFenceCreateSignaledBit                 = 0x00000001
+	vkCommandPoolCreateResetCommandBufferBit      = 0x00000002
+	vkFenceCreateSignaledBit                      = 0x00000001
+	vkDescriptorPoolCreateFreeDescriptorSetBit    = 0x00000001
 
 	vkQueueFamilyIgnored = ^uint32(0)
 	vkSubpassExternal    = ^uint32(0)

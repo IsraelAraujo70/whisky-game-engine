@@ -22,10 +22,22 @@ type SpriteCmd struct {
 
 func (SpriteCmd) drawCmd() {}
 
+// TextCmd draws a string of text using the engine's built-in bitmap font.
+// Pos is in the same coordinate space as other draw commands (screen/virtual).
+type TextCmd struct {
+	Text  string
+	Pos   geom.Vec2
+	Color geom.Color
+	Scale float64
+}
+
+func (TextCmd) drawCmd() {}
+
 // DrawContext is used by Drawable components to enqueue draw commands.
 type DrawContext interface {
 	DrawRect(worldRect geom.Rect, color geom.Color)
 	DrawSprite(texture TextureID, src, dst geom.Rect, flipH, flipV bool)
+	DrawText(text string, worldPos geom.Vec2, color geom.Color, scale float64)
 	VirtualSize() (w, h float64)
 	ViewportRect() geom.Rect
 }

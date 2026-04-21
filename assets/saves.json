@@ -1,0 +1,67 @@
+{
+  "slots": [
+    {
+      "slot_index": 0,
+      "level_index": 0,
+      "player_hp": 5,
+      "score": {
+        "XP": 0,
+        "Level": 1,
+        "Kills": 0,
+        "Coins": 0,
+        "HighScore": 0
+      },
+      "unlocked_levels": [
+        true,
+        false,
+        false
+      ],
+      "key_map": {
+        "attack": [
+          "j",
+          "k"
+        ],
+        "jump": [
+          "space",
+          "up",
+          "w"
+        ],
+        "menu_back": [
+          "escape"
+        ],
+        "menu_confirm": [
+          "enter",
+          "space"
+        ],
+        "menu_down": [
+          "down",
+          "s"
+        ],
+        "menu_up": [
+          "up",
+          "w"
+        ],
+        "move_left": [
+          "a",
+          "left"
+        ],
+        "move_right": [
+          "d",
+          "right"
+        ],
+        "sprint": [
+          "lshift"
+        ]
+      },
+      "volume": 0.8,
+      "difficulty": 1,
+      "last_save_time": "2026-04-20 22:32"
+    }
+  ],
+  "last_used_slot": 0,
+  "unlocked_levels": [
+    true,
+    false,
+    false
+  ]
+}

@@ -28,6 +28,17 @@ const (
 	wmClose            = 0x0010
 	wmQuit             = 0x0012
 	wmSize             = 0x0005
+	wmMouseMove        = 0x0200
+	wmLButtonDown      = 0x0201
+	wmLButtonUp        = 0x0202
+	wmRButtonDown      = 0x0204
+	wmRButtonUp        = 0x0205
+	wmMButtonDown      = 0x0207
+	wmMButtonUp        = 0x0208
+	wmXButtonDown      = 0x020B
+	wmXButtonUp        = 0x020C
+	wmMouseWheel       = 0x020A
+	wmMouseHWheel      = 0x020E
 	wsOverlappedWindow = 0x00CF0000
 )
 
@@ -104,6 +115,13 @@ type Window struct {
 	closed      atomic.Bool
 	width       atomic.Int32
 	height      atomic.Int32
+
+	mouseMu     sync.Mutex
+	mouseX      float64
+	mouseY      float64
+	mouseButtons [5]bool
+	mouseWheelX float64
+	mouseWheelY float64
 }
 
 func New(title string, width, height int, keyMap map[string]string) (*Window, error) {
@@ -176,6 +194,25 @@ func (w *Window) UpdateInput(state *input.State) {
 			state.SetPressed(kb.control, true)
 		}
 	}
+
+	w.mouseMu.Lock()
+	mx, my := w.mouseX, w.mouseY
+	mwx, mwy := w.mouseWheelX, w.mouseWheelY
+	buttons := w.mouseButtons
+	w.mouseWheelX = 0
+	w.mouseWheelY = 0
+	w.mouseMu.Unlock()
+
+	mouse := state.Mouse()
+	mouse.SetPosition(mx, my)
+	mouse.SetButton(input.MouseButtonLeft, buttons[0])
+	mouse.SetButton(input.MouseButtonRight, buttons[1])
+	mouse.SetButton(input.MouseButtonMiddle, buttons[2])
+	mouse.SetButton(input.MouseButtonX1, buttons[3])
+	mouse.SetButton(input.MouseButtonX2, buttons[4])
+	mouse.AddWheel(mwx, mwy)
+
+	pollXInput(state)
 }
 
 func (w *Window) PumpEvents() bool {
@@ -277,27 +314,118 @@ func keyPressed(vk uint16) bool {
 }
 
 func windowProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+	windowsMu.RLock()
+	window := windowsByHandle[windows.Handle(hwnd)]
+	windowsMu.RUnlock()
+
 	switch msg {
 	case wmClose:
 		procDestroyWindow.Call(hwnd)
 		return 0
 	case wmDestroy:
-		windowsMu.Lock()
-		if window, ok := windowsByHandle[windows.Handle(hwnd)]; ok {
+		if window != nil {
 			window.hwnd = 0
 			window.closed.Store(true)
+			windowsMu.Lock()
 			delete(windowsByHandle, windows.Handle(hwnd))
+			windowsMu.Unlock()
 		}
-		windowsMu.Unlock()
 		procPostQuitMessage.Call(0)
 		return 0
 	case wmSize:
-		windowsMu.RLock()
-		window := windowsByHandle[windows.Handle(hwnd)]
-		windowsMu.RUnlock()
 		if window != nil {
 			window.width.Store(int32(lowWord(uint32(lParam))))
 			window.height.Store(int32(highWord(uint32(lParam))))
+		}
+		return 0
+	case wmMouseMove:
+		if window != nil {
+			x := float64(int16(lowWord(uint32(lParam))))
+			y := float64(int16(highWord(uint32(lParam))))
+			window.mouseMu.Lock()
+			window.mouseX = x
+			window.mouseY = y
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmLButtonDown:
+		if window != nil {
+			window.mouseMu.Lock()
+			window.mouseButtons[0] = true
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmLButtonUp:
+		if window != nil {
+			window.mouseMu.Lock()
+			window.mouseButtons[0] = false
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmRButtonDown:
+		if window != nil {
+			window.mouseMu.Lock()
+			window.mouseButtons[1] = true
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmRButtonUp:
+		if window != nil {
+			window.mouseMu.Lock()
+			window.mouseButtons[1] = false
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmMButtonDown:
+		if window != nil {
+			window.mouseMu.Lock()
+			window.mouseButtons[2] = true
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmMButtonUp:
+		if window != nil {
+			window.mouseMu.Lock()
+			window.mouseButtons[2] = false
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmXButtonDown:
+		if window != nil {
+			btn := 3
+			if highWord(uint32(wParam)) == 2 {
+				btn = 4
+			}
+			window.mouseMu.Lock()
+			window.mouseButtons[btn] = true
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmXButtonUp:
+		if window != nil {
+			btn := 3
+			if highWord(uint32(wParam)) == 2 {
+				btn = 4
+			}
+			window.mouseMu.Lock()
+			window.mouseButtons[btn] = false
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmMouseWheel:
+		if window != nil {
+			delta := float64(int16(highWord(uint32(wParam)))) / 120.0
+			window.mouseMu.Lock()
+			window.mouseWheelY += delta
+			window.mouseMu.Unlock()
+		}
+		return 0
+	case wmMouseHWheel:
+		if window != nil {
+			delta := float64(int16(highWord(uint32(wParam)))) / 120.0
+			window.mouseMu.Lock()
+			window.mouseWheelX += delta
+			window.mouseMu.Unlock()
 		}
 		return 0
 	default:

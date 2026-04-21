@@ -2,86 +2,134 @@
 
 package metal
 
-import "github.com/IsraelAraujo70/whisky-game-engine/internal/gfx/rhi"
+import (
+	"github.com/ebitengine/purego/objc"
 
-// TODO(rhi): Implement Metal backend for the generic RHI GPU contract.
-//
-// The following interfaces need concrete Metal implementations:
-//   - rhi.ShaderModule   -- wraps MTLLibrary / MTLFunction
-//   - rhi.Pipeline       -- wraps MTLRenderPipelineState
-//   - rhi.Buffer         -- wraps MTLBuffer
-//   - rhi.Texture        -- wraps MTLTexture
-//   - rhi.DescriptorSet  -- Metal uses argument buffers; needs mapping
-//   - rhi.CommandBuffer  -- wraps MTLCommandBuffer + MTLRenderCommandEncoder
-//   - rhi.Queue          -- wraps MTLCommandQueue
-//
-// The existing Renderer2D in renderer_darwin.go already has the low-level
-// Metal calls. The plan is to:
-//   1. Extract resource creation into Device methods
-//   2. Wrap each Objective-C handle behind the rhi interface
-//   3. Keep Renderer2D working identically during the transition
-//
-// This file is a placeholder so the package compiles on darwin and other
-// agents can see the intended structure.
+	"github.com/IsraelAraujo70/whisky-game-engine/internal/gfx/rhi"
+)
 
-// metalShaderModule is a placeholder for the future rhi.ShaderModule Metal impl.
+// metalShaderModule wraps a compiled MTLFunction.
 type metalShaderModule struct {
-	// library objc.ID  -- will hold the MTLLibrary
-	stage rhi.ShaderStage
+	library  objc.ID
+	function objc.ID
+	stage    rhi.ShaderStage
 }
 
 func (m *metalShaderModule) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
 func (m *metalShaderModule) Stage() rhi.ShaderStage   { return m.stage }
-func (m *metalShaderModule) Destroy() error           { return nil }
+func (m *metalShaderModule) Destroy() error {
+	if m.function != 0 {
+		m.function.Send(objc.RegisterName("release"))
+		m.function = 0
+	}
+	if m.library != 0 {
+		m.library.Send(objc.RegisterName("release"))
+		m.library = 0
+	}
+	return nil
+}
 
-// metalPipeline is a placeholder for the future rhi.Pipeline Metal impl.
-type metalPipeline struct{}
+// metalPipeline wraps a MTLRenderPipelineState.
+type metalPipeline struct {
+	state objc.ID
+}
 
 func (p *metalPipeline) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
-func (p *metalPipeline) Destroy() error           { return nil }
+func (p *metalPipeline) Destroy() error {
+	if p.state != 0 {
+		p.state.Send(objc.RegisterName("release"))
+		p.state = 0
+	}
+	return nil
+}
 
-// metalBuffer is a placeholder for the future rhi.Buffer Metal impl.
+// metalBuffer wraps a MTLBuffer.
 type metalBuffer struct {
-	size  int
-	usage rhi.BufferUsage
+	buffer objc.ID
+	size   int
+	usage  rhi.BufferUsage
 }
 
 func (b *metalBuffer) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
 func (b *metalBuffer) Size() int                { return b.size }
 func (b *metalBuffer) Usage() rhi.BufferUsage   { return b.usage }
-func (b *metalBuffer) Destroy() error           { return nil }
+func (b *metalBuffer) Destroy() error {
+	if b.buffer != 0 {
+		b.buffer.Send(objc.RegisterName("release"))
+		b.buffer = 0
+	}
+	return nil
+}
 
-// metalTexture is a placeholder for the future rhi.Texture Metal impl.
+// metalTexture wraps a MTLTexture.
 type metalTexture struct {
-	width  int
-	height int
-	format rhi.PixelFormat
+	texture objc.ID
+	width   int
+	height  int
+	format  rhi.PixelFormat
 }
 
 func (t *metalTexture) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
 func (t *metalTexture) Width() int               { return t.width }
 func (t *metalTexture) Height() int              { return t.height }
 func (t *metalTexture) Format() rhi.PixelFormat  { return t.format }
-func (t *metalTexture) Destroy() error           { return nil }
+func (t *metalTexture) Destroy() error {
+	if t.texture != 0 {
+		t.texture.Send(objc.RegisterName("release"))
+		t.texture = 0
+	}
+	return nil
+}
 
-// metalDescriptorSet is a placeholder for the future rhi.DescriptorSet Metal impl.
+// metalDescriptorSet is a placeholder; Metal uses argument buffers or direct
+// binding in the encoder, so traditional descriptor sets are not needed for
+// the 2D renderer path.
 type metalDescriptorSet struct{}
 
 func (ds *metalDescriptorSet) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
 func (ds *metalDescriptorSet) Destroy() error           { return nil }
 
-// metalCommandBuffer is a placeholder for the future rhi.CommandBuffer Metal impl.
-type metalCommandBuffer struct{}
-
-func (cb *metalCommandBuffer) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
-func (cb *metalCommandBuffer) Reset() error             { return nil }
-
-// metalQueue is a placeholder for the future rhi.Queue Metal impl.
-type metalQueue struct {
-	kind rhi.QueueKind
+// metalCommandBuffer wraps a MTLCommandBuffer.
+type metalCommandBuffer struct {
+	cmdBuffer objc.ID
+	encoder   objc.ID
 }
 
-func (q *metalQueue) Backend() rhi.BackendKind              { return rhi.BackendKindMetal }
-func (q *metalQueue) Kind() rhi.QueueKind                   { return q.kind }
-func (q *metalQueue) Submit(_ []rhi.CommandBuffer) error     { return nil }
-func (q *metalQueue) WaitIdle() error                       { return nil }
+func (cb *metalCommandBuffer) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
+func (cb *metalCommandBuffer) Reset() error {
+	// Reset creates a fresh command buffer from the queue.
+	// In practice the renderer creates command buffers directly,
+	// so this is a no-op placeholder.
+	return nil
+}
+
+// metalQueue wraps a MTLCommandQueue.
+type metalQueue struct {
+	queue objc.ID
+	kind  rhi.QueueKind
+}
+
+func (q *metalQueue) Backend() rhi.BackendKind { return rhi.BackendKindMetal }
+func (q *metalQueue) Kind() rhi.QueueKind      { return q.kind }
+func (q *metalQueue) Submit(cmds []rhi.CommandBuffer) error {
+	selCommit := objc.RegisterName("commit")
+	for _, c := range cmds {
+		if mc, ok := c.(*metalCommandBuffer); ok && mc.cmdBuffer != 0 {
+			mc.cmdBuffer.Send(selCommit)
+		}
+	}
+	return nil
+}
+func (q *metalQueue) WaitIdle() error {
+	// Create a dummy command buffer and wait for it.
+	selCommandBuffer := objc.RegisterName("commandBuffer")
+	selCommit := objc.RegisterName("commit")
+	selWaitUntilCompleted := objc.RegisterName("waitUntilCompleted")
+	cmdBuffer := objc.Send[objc.ID](q.queue, selCommandBuffer)
+	if cmdBuffer == 0 {
+		return nil
+	}
+	cmdBuffer.Send(selCommit)
+	cmdBuffer.Send(selWaitUntilCompleted)
+	return nil
+}

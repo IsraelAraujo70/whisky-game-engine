@@ -91,6 +91,7 @@ func loadDefaultAPI() (*vulkanAPI, error) {
 		tryRegisterProc(dll, "vkCreateDescriptorPool", &api.createDescriptorPool)
 		tryRegisterProc(dll, "vkDestroyDescriptorPool", &api.destroyDescriptorPool)
 		tryRegisterProc(dll, "vkAllocateDescriptorSets", &api.allocateDescriptorSets)
+		tryRegisterProc(dll, "vkFreeDescriptorSets", &api.freeDescriptorSets)
 		tryRegisterProc(dll, "vkUpdateDescriptorSets", &api.updateDescriptorSets)
 		tryRegisterProc(dll, "vkCreateSampler", &api.createSampler)
 		tryRegisterProc(dll, "vkDestroySampler", &api.destroySampler)

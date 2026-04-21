@@ -34,6 +34,9 @@ func (s *spriteContextStub) DrawSprite(texture render.TextureID, src, dst geom.R
 	}
 }
 
+func (s *spriteContextStub) DrawText(text string, worldPos geom.Vec2, color geom.Color, scale float64) {
+}
+
 func (s *spriteContextStub) VirtualSize() (w, h float64) {
 	return 320, 180
 }

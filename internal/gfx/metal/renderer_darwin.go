@@ -5,13 +5,12 @@ package metal
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
+	"github.com/IsraelAraujo70/whisky-game-engine/internal/gfx/rhi"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
 )
 
@@ -78,11 +77,6 @@ type viewUniforms struct {
 	LogicalSize [2]float32
 }
 
-type LayerHost interface {
-	Size() (width, height int)
-	AttachLayer(layer objc.ID)
-}
-
 type gpuTexture struct {
 	width   int
 	height  int
@@ -90,7 +84,6 @@ type gpuTexture struct {
 }
 
 type Renderer2D struct {
-	host           LayerHost
 	device         objc.ID
 	commandQueue   objc.ID
 	layer          objc.ID
@@ -105,23 +98,11 @@ type Renderer2D struct {
 }
 
 var (
-	metalOnce sync.Once
-	metalErr  error
-
-	mtlCreateSystemDefaultDevice func() objc.ID
-
-	selLayer                                = objc.RegisterName("layer")
-	selNew                                  = objc.RegisterName("new")
-	selRetain                               = objc.RegisterName("retain")
 	selReleaseMetal                         = objc.RegisterName("release")
-	selSetDevice                            = objc.RegisterName("setDevice:")
-	selSetPixelFormat                       = objc.RegisterName("setPixelFormat:")
-	selSetFramebufferOnly                   = objc.RegisterName("setFramebufferOnly:")
-	selSetOpaque                            = objc.RegisterName("setOpaque:")
+	selNew                                  = objc.RegisterName("new")
 	selSetDrawableSize                      = objc.RegisterName("setDrawableSize:")
 	selNextDrawable                         = objc.RegisterName("nextDrawable")
 	selTexture                              = objc.RegisterName("texture")
-	selNewCommandQueue                      = objc.RegisterName("newCommandQueue")
 	selCommandBuffer                        = objc.RegisterName("commandBuffer")
 	selCommit                               = objc.RegisterName("commit")
 	selPresentDrawable                      = objc.RegisterName("presentDrawable:")
@@ -160,6 +141,7 @@ var (
 	selSetDestinationRGBBlendFactor         = objc.RegisterName("setDestinationRGBBlendFactor:")
 	selSetSourceAlphaBlendFactor            = objc.RegisterName("setSourceAlphaBlendFactor:")
 	selSetDestinationAlphaBlendFactor       = objc.RegisterName("setDestinationAlphaBlendFactor:")
+	selSetPixelFormat                       = objc.RegisterName("setPixelFormat:")
 	selNewSamplerStateWithDescriptor        = objc.RegisterName("newSamplerStateWithDescriptor:")
 	selSetMinFilter                         = objc.RegisterName("setMinFilter:")
 	selSetMagFilter                         = objc.RegisterName("setMagFilter:")
@@ -213,50 +195,31 @@ fragment float4 whiskyFragment(VertexOut inVertex [[stage_in]],
 }
 `
 
-func NewRenderer2D(host LayerHost) (*Renderer2D, error) {
-	if host == nil {
-		return nil, fmt.Errorf("metal: layer host is nil")
+func NewRenderer2D(deviceValue rhi.Device, swapchainValue rhi.Swapchain) (*Renderer2D, error) {
+	dev, ok := deviceValue.(*metalDevice)
+	if !ok {
+		return nil, fmt.Errorf("metal: expected *metalDevice, got %T", deviceValue)
 	}
-	if err := loadMetalRuntime(); err != nil {
-		return nil, err
+	swc, ok := swapchainValue.(*metalSwapchain)
+	if !ok {
+		return nil, fmt.Errorf("metal: expected *metalSwapchain, got %T", swapchainValue)
 	}
-	device := mtlCreateSystemDefaultDevice()
-	if device == 0 {
-		return nil, fmt.Errorf("metal: MTLCreateSystemDefaultDevice returned nil")
+	if dev.device == 0 {
+		return nil, fmt.Errorf("metal: device is nil")
 	}
-	commandQueue := objc.Send[objc.ID](device, selNewCommandQueue)
-	if commandQueue == 0 {
-		return nil, fmt.Errorf("metal: failed to create command queue")
+	if swc.layer == 0 {
+		return nil, fmt.Errorf("metal: swapchain layer is nil")
 	}
-	layerClass := objc.GetClass("CAMetalLayer")
-	if layerClass == 0 {
-		commandQueue.Send(selReleaseMetal)
-		return nil, fmt.Errorf("metal: CAMetalLayer class not available")
-	}
-	layer := objc.ID(layerClass).Send(selLayer)
-	if layer == 0 {
-		commandQueue.Send(selReleaseMetal)
-		return nil, fmt.Errorf("metal: failed to create CAMetalLayer")
-	}
-	layer = layer.Send(selRetain)
-	layer.Send(selSetDevice, device)
-	layer.Send(selSetPixelFormat, uintptr(mtlPixelFormatBGRA8Unorm))
-	layer.Send(selSetFramebufferOnly, true)
-	layer.Send(selSetOpaque, true)
-	host.AttachLayer(layer)
 
 	software, err := newSoftwareRenderer()
 	if err != nil {
-		layer.Send(selReleaseMetal)
-		commandQueue.Send(selReleaseMetal)
 		return nil, err
 	}
 
 	renderer := &Renderer2D{
-		host:          host,
-		device:        device,
-		commandQueue:  commandQueue,
-		layer:         layer,
+		device:        dev.device,
+		commandQueue:  dev.commandQueue,
+		layer:         swc.layer,
 		software:      software,
 		texturesBySrc: map[*softwareTexture]*gpuTexture{},
 	}
@@ -340,34 +303,36 @@ func (r *Renderer2D) Destroy() error {
 		r.pipelineState.Send(selReleaseMetal)
 		r.pipelineState = 0
 	}
-	if r.layer != 0 {
-		r.layer.Send(selReleaseMetal)
-		r.layer = 0
-	}
-	if r.commandQueue != 0 {
-		r.commandQueue.Send(selReleaseMetal)
-		r.commandQueue = 0
-	}
+	// layer, commandQueue and device are owned by RHI objects; do not release here.
 	r.vertexCapacity = 0
 	r.device = 0
+	r.commandQueue = 0
+	r.layer = 0
 	r.software = nil
 	runtime.SetFinalizer(r, nil)
 	return nil
 }
 
 func (r *Renderer2D) resizeResources() error {
-	if r == nil || r.host == nil || r.layer == 0 {
+	if r == nil || r.layer == 0 {
 		return nil
 	}
-	width, height := r.host.Size()
+	// Size is managed by the swapchain; the backend calls swapchain.Resize()
+	// before DrawFrame when the window size changes. We just read the current
+	// drawable size from the layer to stay in sync.
+	selDrawableSize := objc.RegisterName("drawableSize")
+	size := objc.Send[CGSize](r.layer, selDrawableSize)
+	width := int(size.Width)
+	height := int(size.Height)
 	if width <= 0 || height <= 0 {
 		r.targetWidth = 0
 		r.targetHeight = 0
 		return nil
 	}
-	r.layer.Send(selSetDrawableSize, CGSize{Width: float64(width), Height: float64(height)})
-	r.targetWidth = width
-	r.targetHeight = height
+	if width != r.targetWidth || height != r.targetHeight {
+		r.targetWidth = width
+		r.targetHeight = height
+	}
 	return nil
 }
 
@@ -625,20 +590,4 @@ func nsErrorDescription(errObj objc.ID) string {
 		return "unknown error"
 	}
 	return message
-}
-
-func loadMetalRuntime() error {
-	metalOnce.Do(func() {
-		if _, err := purego.Dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", purego.RTLD_GLOBAL|purego.RTLD_LAZY); err != nil {
-			metalErr = fmt.Errorf("metal: load QuartzCore: %w", err)
-			return
-		}
-		metalHandle, err := purego.Dlopen("/System/Library/Frameworks/Metal.framework/Metal", purego.RTLD_GLOBAL|purego.RTLD_LAZY)
-		if err != nil {
-			metalErr = fmt.Errorf("metal: load Metal framework: %w", err)
-			return
-		}
-		purego.RegisterLibFunc(&mtlCreateSystemDefaultDevice, metalHandle, "MTLCreateSystemDefaultDevice")
-	})
-	return metalErr
 }

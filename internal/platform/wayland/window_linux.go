@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/input"
+	"github.com/IsraelAraujo70/whisky-game-engine/internal/platform/linux"
 	platformapi "github.com/IsraelAraujo70/whisky-game-engine/internal/platform"
 )
 
@@ -36,8 +37,10 @@ const (
 	wlSurfaceDestroyOpcode = 0
 	wlSurfaceCommitOpcode  = 6
 
+	wlSeatGetPointerOpcode  = 0
 	wlSeatGetKeyboardOpcode = 1
 
+	wlSeatCapabilityPointer  = 1 << 0
 	wlSeatCapabilityKeyboard = 1 << 1
 
 	wlKeyboardStateReleased = 0
@@ -113,6 +116,14 @@ type wlKeyboardListener struct {
 	Modifiers uintptr
 }
 
+type wlPointerListener struct {
+	Enter  uintptr
+	Leave  uintptr
+	Motion uintptr
+	Button uintptr
+	Axis   uintptr
+}
+
 type Window struct {
 	token uintptr
 
@@ -125,11 +136,25 @@ type Window struct {
 	toplevel   unsafe.Pointer
 	seat       unsafe.Pointer
 	keyboard   unsafe.Pointer
+	pointer    unsafe.Pointer
 
 	keyBindings []keyBinding
 
 	pressedMu sync.RWMutex
 	pressed   map[uint32]bool
+
+	mouseMu     sync.Mutex
+	mouseX      float64
+	mouseY      float64
+	mouseButtons [5]bool
+	mouseWheelX float64
+	mouseWheelY float64
+
+	gamepadPoller *linux.GamepadPoller
+
+	xkbContext unsafe.Pointer
+	xkbKeymap  unsafe.Pointer
+	xkbState   unsafe.Pointer
 
 	closed     atomic.Bool
 	configured atomic.Bool
@@ -161,6 +186,7 @@ var (
 	wlSurfaceInterface    *wlInterface
 	wlSeatInterface       *wlInterface
 	wlKeyboardInterface   *wlInterface
+	wlPointerInterface    *wlInterface
 
 	waylandWindows      sync.Map
 	nextWaylandWindowID atomic.Uintptr
@@ -196,12 +222,27 @@ var (
 	cXDGSurfaceAckConfigureName   = []byte("ack_configure\x00")
 	cXDGSurfaceConfigureEventName = []byte("configure\x00")
 
-	cXDGToplevelDestroyName   = []byte("destroy\x00")
-	cXDGToplevelSetParentName = []byte("set_parent\x00")
-	cXDGToplevelSetTitleName  = []byte("set_title\x00")
-	cXDGToplevelSetAppIDName  = []byte("set_app_id\x00")
-	cXDGToplevelConfigureName = []byte("configure\x00")
-	cXDGToplevelCloseName     = []byte("close\x00")
+	cXDGToplevelDestroyName        = []byte("destroy\x00")
+	cXDGToplevelSetParentName      = []byte("set_parent\x00")
+	cXDGToplevelSetTitleName       = []byte("set_title\x00")
+	cXDGToplevelSetAppIDName       = []byte("set_app_id\x00")
+	cXDGToplevelShowWindowMenuName = []byte("show_window_menu\x00")
+	cXDGToplevelMoveName           = []byte("move\x00")
+	cXDGToplevelResizeName         = []byte("resize\x00")
+	cXDGToplevelSetMaxSizeName     = []byte("set_max_size\x00")
+	cXDGToplevelSetMinSizeName     = []byte("set_min_size\x00")
+	cXDGToplevelSetMaximizedName   = []byte("set_maximized\x00")
+	cXDGToplevelUnsetMaximizedName = []byte("unset_maximized\x00")
+	cXDGToplevelSetFullscreenName  = []byte("set_fullscreen\x00")
+	cXDGToplevelUnsetFullscreenName = []byte("unset_fullscreen\x00")
+	cXDGToplevelSetMinimizedName   = []byte("set_minimized\x00")
+	cXDGToplevelConfigureName      = []byte("configure\x00")
+	cXDGToplevelCloseName          = []byte("close\x00")
+
+	cObjectUintSig     = []byte("ou\x00")
+	cObjectUintUintSig = []byte("ouu\x00")
+	cObjectUintIntIntSig = []byte("ouii\x00")
+	cIntIntSig         = []byte("ii\x00")
 )
 
 var (
@@ -265,10 +306,20 @@ var (
 	}
 
 	xdgToplevelMethods = [...]wlMessage{
-		{Name: &cXDGToplevelDestroyName[0], Signature: &cEmpty[0]},
-		{Name: &cXDGToplevelSetParentName[0], Signature: &cNullableObjectSig[0]},
-		{Name: &cXDGToplevelSetTitleName[0], Signature: &cStringSig[0]},
-		{Name: &cXDGToplevelSetAppIDName[0], Signature: &cStringSig[0]},
+		{Name: &cXDGToplevelDestroyName[0], Signature: &cEmpty[0]},             // 0: destroy
+		{Name: &cXDGToplevelSetParentName[0], Signature: &cNullableObjectSig[0]}, // 1: set_parent
+		{Name: &cXDGToplevelSetTitleName[0], Signature: &cStringSig[0]},        // 2: set_title
+		{Name: &cXDGToplevelSetAppIDName[0], Signature: &cStringSig[0]},        // 3: set_app_id
+		{Name: &cXDGToplevelShowWindowMenuName[0], Signature: &cObjectUintIntIntSig[0]}, // 4: show_window_menu
+		{Name: &cXDGToplevelMoveName[0], Signature: &cObjectUintSig[0]},        // 5: move
+		{Name: &cXDGToplevelResizeName[0], Signature: &cObjectUintUintSig[0]},  // 6: resize
+		{Name: &cXDGToplevelSetMaxSizeName[0], Signature: &cIntIntSig[0]},      // 7: set_max_size
+		{Name: &cXDGToplevelSetMinSizeName[0], Signature: &cIntIntSig[0]},      // 8: set_min_size
+		{Name: &cXDGToplevelSetMaximizedName[0], Signature: &cEmpty[0]},        // 9: set_maximized
+		{Name: &cXDGToplevelUnsetMaximizedName[0], Signature: &cEmpty[0]},      // 10: unset_maximized
+		{Name: &cXDGToplevelSetFullscreenName[0], Signature: &cNullableObjectSig[0]}, // 11: set_fullscreen
+		{Name: &cXDGToplevelUnsetFullscreenName[0], Signature: &cEmpty[0]},     // 12: unset_fullscreen
+		{Name: &cXDGToplevelSetMinimizedName[0], Signature: &cEmpty[0]},        // 13: set_minimized
 	}
 	xdgToplevelEvents = [...]wlMessage{
 		{Name: &cXDGToplevelConfigureName[0], Signature: &cIntIntArraySig[0]},
@@ -310,6 +361,13 @@ var (
 		Key:       purego.NewCallback(wlKeyboardKey),
 		Modifiers: purego.NewCallback(wlKeyboardModifiers),
 	}
+	pointerListener = wlPointerListener{
+		Enter:  purego.NewCallback(wlPointerEnter),
+		Leave:  purego.NewCallback(wlPointerLeave),
+		Motion: purego.NewCallback(wlPointerMotion),
+		Button: purego.NewCallback(wlPointerButton),
+		Axis:   purego.NewCallback(wlPointerAxis),
+	}
 )
 
 func New(title string, width, height int, keyMap map[string]string) (*Window, error) {
@@ -333,10 +391,11 @@ func New(title string, width, height int, keyMap map[string]string) (*Window, er
 	}
 
 	win := &Window{
-		display:     display,
-		registry:    registry,
-		keyBindings: buildKeyBindings(keyMap),
-		pressed:     make(map[uint32]bool),
+		display:       display,
+		registry:      registry,
+		keyBindings:   buildKeyBindings(keyMap),
+		pressed:       make(map[uint32]bool),
+		gamepadPoller: linux.NewGamepadPoller(),
 	}
 	win.width.Store(int32(width))
 	win.height.Store(int32(height))
@@ -405,12 +464,31 @@ func (w *Window) UpdateInput(state *input.State) {
 	}
 
 	w.pressedMu.RLock()
-	defer w.pressedMu.RUnlock()
 	for _, binding := range w.keyBindings {
-		if w.pressed[binding.keycode] {
+		if w.pressed[binding.keysym] {
 			state.SetPressed(binding.control, true)
 		}
 	}
+	w.pressedMu.RUnlock()
+
+	w.mouseMu.Lock()
+	mx, my := w.mouseX, w.mouseY
+	mwx, mwy := w.mouseWheelX, w.mouseWheelY
+	buttons := w.mouseButtons
+	w.mouseWheelX = 0
+	w.mouseWheelY = 0
+	w.mouseMu.Unlock()
+
+	mouse := state.Mouse()
+	mouse.SetPosition(mx, my)
+	mouse.SetButton(input.MouseButtonLeft, buttons[0])
+	mouse.SetButton(input.MouseButtonMiddle, buttons[1])
+	mouse.SetButton(input.MouseButtonRight, buttons[2])
+	mouse.SetButton(input.MouseButtonX1, buttons[3])
+	mouse.SetButton(input.MouseButtonX2, buttons[4])
+	mouse.AddWheel(mwx, mwy)
+
+	w.gamepadPoller.Poll(state)
 }
 
 func (w *Window) PumpEvents() bool {
@@ -517,6 +595,19 @@ func (w *Window) Destroy() error {
 		w.display = nil
 	}
 
+	if w.xkbState != nil {
+		xkbStateUnref(w.xkbState)
+		w.xkbState = nil
+	}
+	if w.xkbKeymap != nil {
+		xkbKeymapUnref(w.xkbKeymap)
+		w.xkbKeymap = nil
+	}
+	if w.xkbContext != nil {
+		xkbContextUnref(w.xkbContext)
+		w.xkbContext = nil
+	}
+
 	w.clearPressed()
 	return nil
 }
@@ -570,6 +661,11 @@ func ensureWayland() error {
 			return
 		}
 		wlKeyboardInterface, err = loadInterface(handle, "wl_keyboard_interface")
+		if err != nil {
+			waylandErr = err
+			return
+		}
+		wlPointerInterface, err = loadInterface(handle, "wl_pointer_interface")
 		if err != nil {
 			waylandErr = err
 			return
@@ -639,6 +735,11 @@ func wlSurfaceCommit(surface unsafe.Pointer) {
 
 func wlSurfaceDestroy(surface unsafe.Pointer) {
 	marshalFlags(surface, wlSurfaceDestroyOpcode, nil, wlProxyGetVersion(surface), wlMarshalFlagDestroy)
+}
+
+func wlSeatGetPointer(seat unsafe.Pointer) unsafe.Pointer {
+	version := wlProxyGetVersion(seat)
+	return unsafe.Pointer(marshalFlags(seat, wlSeatGetPointerOpcode, wlPointerInterface, version, 0, 0))
 }
 
 func wlSeatGetKeyboard(seat unsafe.Pointer) unsafe.Pointer {
@@ -770,6 +871,20 @@ func wlSeatCapabilities(data, seat uintptr, capabilities uint32) {
 		return
 	}
 
+	if capabilities&wlSeatCapabilityPointer != 0 {
+		if win.pointer == nil {
+			win.pointer = wlSeatGetPointer(unsafe.Pointer(seat))
+			if win.pointer != nil {
+				_ = wlProxyAddListener(win.pointer, unsafe.Pointer(&pointerListener), unsafe.Pointer(win.token))
+			}
+		}
+	} else {
+		if win.pointer != nil {
+			wlProxyDestroy(win.pointer)
+			win.pointer = nil
+		}
+	}
+
 	if capabilities&wlSeatCapabilityKeyboard != 0 {
 		if win.keyboard == nil {
 			win.keyboard = wlSeatGetKeyboard(unsafe.Pointer(seat))
@@ -777,13 +892,12 @@ func wlSeatCapabilities(data, seat uintptr, capabilities uint32) {
 				_ = wlProxyAddListener(win.keyboard, unsafe.Pointer(&keyboardListener), unsafe.Pointer(win.token))
 			}
 		}
-		return
-	}
-
-	if win.keyboard != nil {
-		wlProxyDestroy(win.keyboard)
-		win.keyboard = nil
-		win.clearPressed()
+	} else {
+		if win.keyboard != nil {
+			wlProxyDestroy(win.keyboard)
+			win.keyboard = nil
+			win.clearPressed()
+		}
 	}
 }
 
@@ -794,14 +908,67 @@ func wlSeatName(data, seat, name uintptr) {
 }
 
 func wlKeyboardKeymap(data, keyboard uintptr, format uint32, fd int32, size uint32) {
-	_ = data
 	_ = keyboard
-	_ = format
-	_ = size
 
-	if fd >= 0 {
-		_ = unix.Close(int(fd))
+	win := lookupWindow(data)
+	if win == nil {
+		if fd >= 0 {
+			_ = unix.Close(int(fd))
+		}
+		return
 	}
+
+	// xkbcommon expects keymap format 1 (text v1).
+	if format != 1 {
+		if fd >= 0 {
+			_ = unix.Close(int(fd))
+		}
+		return
+	}
+
+	if err := ensureXkbcommon(); err != nil {
+		if fd >= 0 {
+			_ = unix.Close(int(fd))
+		}
+		return
+	}
+
+	if fd < 0 {
+		return
+	}
+
+	buf, err := unix.Mmap(int(fd), 0, int(size), unix.PROT_READ, unix.MAP_PRIVATE)
+	_ = unix.Close(int(fd))
+	if err != nil {
+		return
+	}
+	defer unix.Munmap(buf)
+
+	// Clean up previous xkb state.
+	if win.xkbState != nil {
+		xkbStateUnref(win.xkbState)
+		win.xkbState = nil
+	}
+	if win.xkbKeymap != nil {
+		xkbKeymapUnref(win.xkbKeymap)
+		win.xkbKeymap = nil
+	}
+	if win.xkbContext != nil {
+		xkbContextUnref(win.xkbContext)
+		win.xkbContext = nil
+	}
+
+	win.xkbContext = xkbContextNew(0)
+	if win.xkbContext == nil {
+		return
+	}
+
+	win.xkbKeymap = xkbKeymapNewFromString(win.xkbContext, &buf[0], 1, 0)
+	if win.xkbKeymap == nil {
+		return
+	}
+
+	win.xkbState = xkbStateNew(win.xkbKeymap)
 }
 
 func wlKeyboardEnter(data, keyboard, serial, surface, keys uintptr) {
@@ -826,11 +993,17 @@ func wlKeyboardEnter(data, keyboard, serial, surface, keys uintptr) {
 		return
 	}
 
-	pressed := unsafe.Slice((*uint32)(array.Data), array.Size/unsafe.Sizeof(uint32(0)))
+	raw := unsafe.Slice((*uint32)(array.Data), array.Size/unsafe.Sizeof(uint32(0)))
 	win.pressedMu.Lock()
 	defer win.pressedMu.Unlock()
-	for _, key := range pressed {
-		win.pressed[key] = true
+	for _, key := range raw {
+		keysym := uint32(0)
+		if win.xkbState != nil {
+			keysym = xkbStateKeyGetOneSym(win.xkbState, key+8)
+		}
+		if keysym != 0 {
+			win.pressed[keysym] = true
+		}
 	}
 }
 
@@ -856,22 +1029,117 @@ func wlKeyboardKey(data, keyboard, serial, time uintptr, key uint32, state uint3
 		return
 	}
 
+	keysym := uint32(0)
+	if win.xkbState != nil {
+		keysym = xkbStateKeyGetOneSym(win.xkbState, key+8)
+	}
+	if keysym == 0 {
+		return
+	}
+
 	switch state {
 	case wlKeyboardStatePressed, wlKeyboardStateRepeated:
-		win.setKeyPressed(key, true)
+		win.setKeyPressed(keysym, true)
 	case wlKeyboardStateReleased:
-		win.setKeyPressed(key, false)
+		win.setKeyPressed(keysym, false)
 	}
 }
 
 func wlKeyboardModifiers(data, keyboard, serial, depressed, latched, locked, group uintptr) {
-	_ = data
 	_ = keyboard
 	_ = serial
-	_ = depressed
-	_ = latched
-	_ = locked
-	_ = group
+
+	win := lookupWindow(data)
+	if win == nil {
+		return
+	}
+	if win.xkbState != nil {
+		xkbStateUpdateMask(win.xkbState,
+			uint32(depressed), uint32(latched), uint32(locked),
+			uint32(group), 0, 0)
+	}
+}
+
+func wlPointerEnter(data, pointer, serial, surface uintptr, surfaceX, surfaceY int32) {
+	_ = pointer
+	_ = serial
+	win := lookupWindow(data)
+	if win == nil {
+		return
+	}
+	win.mouseMu.Lock()
+	win.mouseX = float64(surfaceX) / 256.0 // wl_fixed_t is 1/256
+	win.mouseY = float64(surfaceY) / 256.0
+	win.mouseMu.Unlock()
+}
+
+func wlPointerLeave(data, pointer, serial, surface uintptr) {
+	_ = pointer
+	_ = serial
+	_ = surface
+	win := lookupWindow(data)
+	if win == nil {
+		return
+	}
+	win.mouseMu.Lock()
+	win.mouseX = -1
+	win.mouseY = -1
+	win.mouseMu.Unlock()
+}
+
+func wlPointerMotion(data, pointer, time uintptr, surfaceX, surfaceY int32) {
+	_ = pointer
+	_ = time
+	win := lookupWindow(data)
+	if win == nil {
+		return
+	}
+	win.mouseMu.Lock()
+	win.mouseX = float64(surfaceX) / 256.0
+	win.mouseY = float64(surfaceY) / 256.0
+	win.mouseMu.Unlock()
+}
+
+func wlPointerButton(data, pointer, serial, time uintptr, button uint32, buttonState uint32) {
+	_ = pointer
+	_ = serial
+	_ = time
+	win := lookupWindow(data)
+	if win == nil {
+		return
+	}
+	pressed := buttonState == 1 // WL_POINTER_BUTTON_STATE_PRESSED
+	win.mouseMu.Lock()
+	switch button {
+	case 0x110: // BTN_LEFT
+		win.mouseButtons[0] = pressed
+	case 0x111: // BTN_RIGHT
+		win.mouseButtons[2] = pressed
+	case 0x112: // BTN_MIDDLE
+		win.mouseButtons[1] = pressed
+	case 0x113: // BTN_SIDE
+		win.mouseButtons[3] = pressed
+	case 0x114: // BTN_EXTRA
+		win.mouseButtons[4] = pressed
+	}
+	win.mouseMu.Unlock()
+}
+
+func wlPointerAxis(data, pointer, time uintptr, axis uint32, value int32) {
+	_ = pointer
+	_ = time
+	win := lookupWindow(data)
+	if win == nil {
+		return
+	}
+	delta := float64(value) / 256.0 // wl_fixed_t
+	win.mouseMu.Lock()
+	if axis == 0 { // WL_POINTER_AXIS_VERTICAL_SCROLL
+		win.mouseWheelY += delta
+	} else if axis == 1 { // WL_POINTER_AXIS_HORIZONTAL_SCROLL
+		win.mouseWheelX += delta
+	}
+	win.mouseMu.Unlock()
 }
 
 func (w *Window) setKeyPressed(key uint32, pressed bool) {

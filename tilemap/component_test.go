@@ -30,6 +30,9 @@ func (d *tileDrawContextStub) DrawSprite(texture render.TextureID, src, dst geom
 	})
 }
 
+func (d *tileDrawContextStub) DrawText(text string, worldPos geom.Vec2, color geom.Color, scale float64) {
+}
+
 func (d *tileDrawContextStub) VirtualSize() (w, h float64) {
 	return 32, 32
 }
