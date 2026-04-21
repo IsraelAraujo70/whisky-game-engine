@@ -434,10 +434,12 @@ func Run(game Game, cfg Config) (err error) {
 			select {
 			case relPath := <-ctx.reloadQueue:
 				ctx.Assets.Invalidate(relPath)
-				if _, _, _, err := ctx.LoadTexture(relPath); err != nil {
-					ctx.logger.Printf("[assets] hot-reload failed for %s: %v", relPath, err)
-				} else {
-					ctx.logger.Printf("[assets] hot-reloaded %s", relPath)
+				if filepath.Ext(relPath) == ".png" {
+					if _, _, _, err := ctx.LoadTexture(relPath); err != nil {
+						ctx.logger.Printf("[assets] hot-reload failed for %s: %v", relPath, err)
+					} else {
+						ctx.logger.Printf("[assets] hot-reloaded %s", relPath)
+					}
 				}
 			default:
 				break drain

@@ -101,6 +101,14 @@ type pixelQuest struct {
 }
 
 func Run() error {
+	// Build an identity KeyMap so the platform layer emits raw key names
+	// (e.g. "a", "left") as control names. The game-level binding system
+	// then maps actions to those same raw names via applyKeyMap.
+	km := make(whisky.KeyMap, len(controlNames))
+	for _, name := range controlNames {
+		km[name] = name
+	}
+
 	return whisky.Run(&pixelQuest{}, whisky.Config{
 		Title:         "Pixel Quest",
 		VirtualWidth:  320,
@@ -111,7 +119,7 @@ func Run() error {
 		StartScene:    scene.New("pixel-quest"),
 		AssetsRoot:    "assets",
 		HotReload:     true,
-		// KeyMap is set dynamically from GameConfig in Load().
+		KeyMap:        km,
 	})
 }
 
@@ -232,7 +240,7 @@ func (g *pixelQuest) initLevel(ctx *whisky.Context) {
 
 func (g *pixelQuest) restartLevel() {
 	g.score.Reset()
-	g.loadLevel(nil, g.currentLevel)
+	g.loadLevel(g.ctx, g.currentLevel)
 	g.changeState(statePlaying)
 }
 

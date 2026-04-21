@@ -143,6 +143,12 @@ func (g *pixelQuest) loadLevel(ctx *whisky.Context, levelIdx int) {
 	g.currentLevel = levelIdx
 	lvl := allLevels[levelIdx]
 
+	// Destroy old scene nodes so components (e.g. tilemap colliders) are cleaned up.
+	for _, child := range ctx.Scene.Root.Children {
+		_ = child.Destroy()
+	}
+	ctx.Scene.Root.Children = nil
+
 	g.world = physics.NewWorld()
 	g.enemies = nil
 	g.enemyStates = make(map[string]*enemyState)
@@ -200,7 +206,7 @@ func newScreenLevelSelect(g *pixelQuest) *screenLevelSelect {
 		}
 		btn := s.menu.AddButton(label, func() {
 			if !locked {
-				g.loadLevel(nil, idx)
+				g.loadLevel(g.ctx, idx)
 				g.changeState(statePlaying)
 			}
 		})

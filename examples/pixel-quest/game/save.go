@@ -151,7 +151,7 @@ func newScreenSaveSlots(g *pixelQuest, mode string) *screenSaveSlots {
 				g.saveData.UnlockedLevels = make([]bool, len(allLevels))
 				g.saveData.UnlockedLevels[0] = true
 				_ = saveSaveData(g.saveData)
-				g.loadLevel(nil, 0)
+				g.loadLevel(g.ctx, 0)
 				g.changeState(statePlaying)
 			} else {
 				// Load existing.
@@ -159,7 +159,7 @@ func newScreenSaveSlots(g *pixelQuest, mode string) *screenSaveSlots {
 					g.saveData.LastUsedSlot = idx
 					g.applySnapshot(g.saveData.Slots[idx])
 					_ = saveSaveData(g.saveData)
-					g.loadLevel(nil, g.currentLevel)
+					g.loadLevel(g.ctx, g.currentLevel)
 					g.changeState(statePlaying)
 				}
 			}

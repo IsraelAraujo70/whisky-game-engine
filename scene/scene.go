@@ -96,6 +96,11 @@ func (n *Node) update(dt float64) error {
 	}
 
 	for _, child := range n.Children {
+		if !child.started {
+			if err := child.start(); err != nil {
+				return err
+			}
+		}
 		if err := child.update(dt); err != nil {
 			return err
 		}

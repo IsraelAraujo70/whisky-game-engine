@@ -36,7 +36,7 @@ func newScreenTitle(g *pixelQuest) *screenTitle {
 	s.menu.AddButton("Continue", func() {
 		if g.saveData.LastUsedSlot >= 0 && g.saveData.LastUsedSlot < len(g.saveData.Slots) {
 			g.applySnapshot(g.saveData.Slots[g.saveData.LastUsedSlot])
-			g.loadLevel(nil, g.currentLevel)
+			g.loadLevel(g.ctx, g.currentLevel)
 			g.changeState(statePlaying)
 		}
 	})
