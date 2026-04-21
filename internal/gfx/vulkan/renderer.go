@@ -84,10 +84,11 @@ type gpuTexture struct {
 }
 
 type gpuBuffer struct {
-	buffer   vkBuffer
-	memory   vkDeviceMemory
-	size     vkDeviceSize
-	capacity int
+	buffer    vkBuffer
+	memory    vkDeviceMemory
+	size      vkDeviceSize
+	capacity  int
+	mappedPtr unsafe.Pointer
 }
 
 type quadVertex struct {
@@ -160,9 +161,6 @@ func (r *Renderer2D) LoadTexture(path string) (render.TextureID, int, int, error
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	if texture, ok := r.texturesByPath[cleanPath]; ok {
-		return texture.id, texture.width, texture.height, nil
-	}
 
 	file, err := os.Open(cleanPath)
 	if err != nil {
@@ -175,6 +173,22 @@ func (r *Renderer2D) LoadTexture(path string) (render.TextureID, int, int, error
 		return 0, 0, 0, err
 	}
 	rgba := imageToRGBA(src)
+
+	if old, ok := r.texturesByPath[cleanPath]; ok {
+		// Re-upload: replace GPU memory in-place preserving TextureID.
+		newTex, err := r.createTextureFromRGBA(rgba.Pix, rgba.Bounds().Dx(), rgba.Bounds().Dy())
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		newTex.id = old.id
+		newTex.width = rgba.Bounds().Dx()
+		newTex.height = rgba.Bounds().Dy()
+		old.destroy(r.device, r.descriptorPool)
+		r.texturesByPath[cleanPath] = newTex
+		r.texturesByID[newTex.id] = newTex
+		return newTex.id, newTex.width, newTex.height, nil
+	}
+
 	texture, err := r.createTextureFromRGBA(rgba.Pix, rgba.Bounds().Dx(), rgba.Bounds().Dy())
 	if err != nil {
 		return 0, 0, 0, err
@@ -417,6 +431,7 @@ func (r *Renderer2D) createDescriptorPool() error {
 	}
 	createInfo := vkDescriptorPoolCreateInfo{
 		SType:         vkStructureTypeDescriptorPoolCreateInfo,
+		Flags:         vkDescriptorPoolCreateFreeDescriptorSetBit,
 		MaxSets:       rendererDescriptorCapacity,
 		PoolSizeCount: 1,
 		PPoolSizes:    &poolSize,
@@ -624,6 +639,10 @@ func (r *Renderer2D) createVertexBuffers() error {
 			return err
 		}
 		buffer.capacity = initialVertexCapacity
+		if result := r.device.api.mapMemory(r.device.handle, buffer.memory, 0, buffer.size, 0, &buffer.mappedPtr); result != vkSuccess {
+			buffer.destroy(r.device)
+			return fmt.Errorf("%w: %s", ErrMapMemory, result)
+		}
 		r.vertexBuffers[index] = buffer
 	}
 	return nil
@@ -631,6 +650,9 @@ func (r *Renderer2D) createVertexBuffers() error {
 
 func (r *Renderer2D) destroyVertexBuffers() {
 	for _, buffer := range r.vertexBuffers {
+		if buffer.mappedPtr != nil {
+			r.device.api.unmapMemory(r.device.handle, buffer.memory)
+		}
 		buffer.destroy(r.device)
 	}
 	r.vertexBuffers = nil
@@ -794,6 +816,10 @@ func (r *Renderer2D) ensureVertexBuffer(frameIndex int, vertexCount int) error {
 	if buffer.capacity >= vertexCount {
 		return nil
 	}
+	if buffer.mappedPtr != nil {
+		r.device.api.unmapMemory(r.device.handle, buffer.memory)
+		buffer.mappedPtr = nil
+	}
 	buffer.destroy(r.device)
 	nextCapacity := vertexCount
 	if nextCapacity < initialVertexCapacity {
@@ -804,6 +830,10 @@ func (r *Renderer2D) ensureVertexBuffer(frameIndex int, vertexCount int) error {
 		return err
 	}
 	created.capacity = nextCapacity
+	if result := r.device.api.mapMemory(r.device.handle, created.memory, 0, created.size, 0, &created.mappedPtr); result != vkSuccess {
+		created.destroy(r.device)
+		return fmt.Errorf("%w: %s", ErrMapMemory, result)
+	}
 	*buffer = created
 	return nil
 }
@@ -813,15 +843,11 @@ func (r *Renderer2D) uploadVertices(frameIndex int, vertices []quadVertex) error
 		return nil
 	}
 	buffer := r.vertexBuffers[frameIndex]
-	size := vertexBufferSize(len(vertices))
-	var mapped unsafe.Pointer
-	result := r.device.api.mapMemory(r.device.handle, buffer.memory, 0, size, 0, &mapped)
-	if result != vkSuccess {
-		return fmt.Errorf("%w: %s", ErrMapMemory, result)
+	if buffer.mappedPtr == nil {
+		return fmt.Errorf("%w: vertex buffer not persistently mapped", ErrMapMemory)
 	}
-	target := unsafe.Slice((*quadVertex)(mapped), len(vertices))
+	target := unsafe.Slice((*quadVertex)(buffer.mappedPtr), buffer.capacity)
 	copy(target, vertices)
-	r.device.api.unmapMemory(r.device.handle, buffer.memory)
 	return nil
 }
 

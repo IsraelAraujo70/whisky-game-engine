@@ -111,9 +111,6 @@ func (r *softwareRenderer) loadTexture(path string) (render.TextureID, int, int,
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	if texture, ok := r.texturesByPath[cleanPath]; ok {
-		return texture.id, texture.width, texture.height, nil
-	}
 
 	file, err := os.Open(cleanPath)
 	if err != nil {
@@ -126,6 +123,16 @@ func (r *softwareRenderer) loadTexture(path string) (render.TextureID, int, int,
 		return 0, 0, 0, err
 	}
 	rgba := imageToRGBA(src)
+
+	if old, ok := r.texturesByPath[cleanPath]; ok {
+		// Re-upload: replace pixel data in-place preserving TextureID.
+		// The GPU texture will be re-created lazily on next use.
+		old.rgba = rgba
+		old.width = rgba.Bounds().Dx()
+		old.height = rgba.Bounds().Dy()
+		return old.id, old.width, old.height, nil
+	}
+
 	r.nextTextureID++
 	texture := &softwareTexture{
 		id:     r.nextTextureID,
@@ -163,6 +170,8 @@ func (r *softwareRenderer) buildDrawData(cmds []render.DrawCmd, lines []string, 
 			first := uint32(len(vertices))
 			vertices = appendQuad(vertices, drawCmd.Dst, drawCmd.Src, whiteColor(), drawCmd.FlipH, drawCmd.FlipV, texture.width, texture.height)
 			batches = appendOrMergeBatch(batches, texture, first, 6)
+		case render.TextCmd:
+			vertices, batches = r.appendTextCmd(vertices, batches, drawCmd)
 		}
 	}
 	vertices, batches = r.appendDebugOverlay(vertices, batches, lines, float64(virtualWidth), float64(virtualHeight))
@@ -240,6 +249,40 @@ func appendQuad(vertices []quadVertex, dst geom.Rect, src geom.Rect, color [4]fl
 		bottomLeft,
 		bottomRight,
 	)
+}
+
+func (r *softwareRenderer) appendTextCmd(vertices []quadVertex, batches []drawBatch, tc render.TextCmd) ([]quadVertex, []drawBatch) {
+	if r == nil || r.debugFont == nil || r.debugFont.texture == nil {
+		return vertices, batches
+	}
+	scale := tc.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	glyphW := float64(r.debugFont.glyphWidth) * scale
+	glyphH := float64(r.debugFont.glyphHeight) * scale
+	color := quadColor(tc.Color)
+	cursorX := tc.Pos.X
+	cursorY := tc.Pos.Y
+
+	for _, ch := range tc.Text {
+		if ch == ' ' {
+			cursorX += glyphW
+			continue
+		}
+		glyphRune := normalizeOverlayRune(ch)
+		src, ok := r.debugFont.glyphs[glyphRune]
+		if !ok {
+			cursorX += glyphW
+			continue
+		}
+		dst := geom.Rect{X: cursorX, Y: cursorY, W: glyphW, H: glyphH}
+		first := uint32(len(vertices))
+		vertices = appendQuad(vertices, dst, src, color, false, false, r.debugFont.texture.width, r.debugFont.texture.height)
+		batches = appendOrMergeBatch(batches, r.debugFont.texture, first, 6)
+		cursorX += glyphW
+	}
+	return vertices, batches
 }
 
 func (r *softwareRenderer) appendDebugOverlay(vertices []quadVertex, batches []drawBatch, lines []string, virtualWidth, virtualHeight float64) ([]quadVertex, []drawBatch) {

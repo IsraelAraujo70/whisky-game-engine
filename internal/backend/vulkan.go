@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"math"
 	"os"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
@@ -101,6 +102,41 @@ func (b *vulkanDesktopBackend) UpdateInput(state *input.State) {
 		return
 	}
 	b.window.UpdateInput(state)
+
+	// Scale mouse from window (pixel) coordinates to virtual coordinates.
+	// This mirrors the viewport calculation in renderer.computeViewport so
+	// that mouse positions match the coordinate space used by DrawRect/DrawText.
+	if b.virtualWidth > 0 && b.virtualHeight > 0 {
+		ww, wh := b.window.Size()
+		if ww > 0 && wh > 0 {
+			logicalW := float64(b.virtualWidth)
+			logicalH := float64(b.virtualHeight)
+			targetW := float64(ww)
+			targetH := float64(wh)
+
+			scaleX := targetW / logicalW
+			scaleY := targetH / logicalH
+			scale := math.Min(scaleX, scaleY)
+			if b.pixelPerfect && scale >= 1 {
+				scale = math.Floor(scale)
+				if scale < 1 {
+					scale = 1
+				}
+			}
+
+			viewportW := logicalW * scale
+			viewportH := logicalH * scale
+			offsetX := (targetW - viewportW) * 0.5
+			offsetY := (targetH - viewportH) * 0.5
+
+			mouse := state.Mouse()
+			mx, my := mouse.Position()
+			mouse.SetPosition(
+				(mx-offsetX)/scale,
+				(my-offsetY)/scale,
+			)
+		}
+	}
 }
 
 func (b *vulkanDesktopBackend) PumpEvents() bool {
@@ -187,6 +223,54 @@ func (b *vulkanDesktopBackend) Destroy() error {
 		b.window = nil
 	}
 	return err
+}
+
+// SetWindowSize resizes the OS window if the platform supports it.
+func (b *vulkanDesktopBackend) SetWindowSize(width, height int) error {
+	if b == nil || b.window == nil {
+		return platformapi.ErrNotSupported
+	}
+	dc, ok := b.window.(platformapi.DisplayController)
+	if !ok {
+		return platformapi.ErrNotSupported
+	}
+	return dc.SetWindowSize(width, height)
+}
+
+// SetWindowMode sets the window mode (windowed, borderless, fullscreen).
+func (b *vulkanDesktopBackend) SetWindowMode(mode platformapi.WindowMode) error {
+	if b == nil || b.window == nil {
+		return platformapi.ErrNotSupported
+	}
+	dc, ok := b.window.(platformapi.DisplayController)
+	if !ok {
+		return platformapi.ErrNotSupported
+	}
+	return dc.SetWindowMode(mode)
+}
+
+// Monitors returns available monitors and their display modes.
+func (b *vulkanDesktopBackend) Monitors() ([]platformapi.MonitorInfo, error) {
+	if b == nil || b.window == nil {
+		return nil, platformapi.ErrNotSupported
+	}
+	dc, ok := b.window.(platformapi.DisplayController)
+	if !ok {
+		return nil, platformapi.ErrNotSupported
+	}
+	return dc.Monitors()
+}
+
+// MoveToMonitor moves the window to the specified monitor.
+func (b *vulkanDesktopBackend) MoveToMonitor(index int) error {
+	if b == nil || b.window == nil {
+		return platformapi.ErrNotSupported
+	}
+	dc, ok := b.window.(platformapi.DisplayController)
+	if !ok {
+		return platformapi.ErrNotSupported
+	}
+	return dc.MoveToMonitor(index)
 }
 
 func vulkanValidationEnabled() bool {

@@ -281,23 +281,27 @@ func (r *Renderer2D) copyBufferToImage(commandBuffer vkCommandBuffer, buffer vkB
 
 func (r *Renderer2D) destroyTextures() {
 	for _, texture := range r.texturesByID {
-		texture.destroy(r.device)
+		texture.destroy(r.device, r.descriptorPool)
 	}
 	r.texturesByID = make(map[render.TextureID]*gpuTexture)
 	r.texturesByPath = make(map[string]*gpuTexture)
 	if r.debugFont != nil {
-		r.debugFont.texture.destroy(r.device)
+		r.debugFont.texture.destroy(r.device, r.descriptorPool)
 		r.debugFont = nil
 	}
 	if r.whiteTexture != nil {
-		r.whiteTexture.destroy(r.device)
+		r.whiteTexture.destroy(r.device, r.descriptorPool)
 		r.whiteTexture = nil
 	}
 }
 
-func (t *gpuTexture) destroy(device *device) {
+func (t *gpuTexture) destroy(device *device, pool vkDescriptorPool) {
 	if t == nil || device == nil {
 		return
+	}
+	if t.descriptorSet != 0 && pool != 0 {
+		device.api.freeDescriptorSets(device.handle, pool, 1, &t.descriptorSet)
+		t.descriptorSet = 0
 	}
 	if t.view != 0 {
 		device.api.destroyImageView(device.handle, t.view, nil)

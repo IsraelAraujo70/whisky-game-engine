@@ -173,6 +173,7 @@ type vulkanAPI struct {
 	createDescriptorPool                    func(device vkDevice, createInfo *vkDescriptorPoolCreateInfo, allocator unsafe.Pointer, descriptorPool *vkDescriptorPool) vkResult
 	destroyDescriptorPool                   func(device vkDevice, descriptorPool vkDescriptorPool, allocator unsafe.Pointer)
 	allocateDescriptorSets                  func(device vkDevice, createInfo *vkDescriptorSetAllocateInfo, descriptorSets *vkDescriptorSet) vkResult
+	freeDescriptorSets                      func(device vkDevice, descriptorPool vkDescriptorPool, descriptorSetCount uint32, descriptorSets *vkDescriptorSet) vkResult
 	updateDescriptorSets                    func(device vkDevice, descriptorWriteCount uint32, descriptorWrites *vkWriteDescriptorSet, descriptorCopyCount uint32, descriptorCopies unsafe.Pointer)
 	createSampler                           func(device vkDevice, createInfo *vkSamplerCreateInfo, allocator unsafe.Pointer, sampler *vkSampler) vkResult
 	destroySampler                          func(device vkDevice, sampler vkSampler, allocator unsafe.Pointer)

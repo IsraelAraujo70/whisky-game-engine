@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"sort"
 	"unsafe"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
@@ -27,9 +28,33 @@ type overlayLayout struct {
 	textColor       [4]float32
 }
 
+type sortableDrawCmd struct {
+	cmd     render.DrawCmd
+	texture *gpuTexture
+}
+
 func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd, lines []string) ([]quadVertex, []drawBatch) {
-	vertices := make([]quadVertex, 0, len(cmds)*6)
-	batches := make([]drawBatch, 0, len(cmds))
+	sorted := make([]sortableDrawCmd, 0, len(cmds))
+	var textCmds []render.TextCmd
+	for _, cmd := range cmds {
+		switch drawCmd := cmd.(type) {
+		case render.FillRect:
+			sorted = append(sorted, sortableDrawCmd{cmd: cmd, texture: r.whiteTexture})
+		case render.SpriteCmd:
+			if tex := r.texturesByID[drawCmd.Texture]; tex != nil {
+				sorted = append(sorted, sortableDrawCmd{cmd: cmd, texture: tex})
+			}
+		case render.TextCmd:
+			textCmds = append(textCmds, drawCmd)
+		}
+	}
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return uintptr(unsafe.Pointer(sorted[i].texture)) < uintptr(unsafe.Pointer(sorted[j].texture))
+	})
+
+	vertices := make([]quadVertex, 0, len(sorted)*6)
+	batches := make([]drawBatch, 0, len(sorted))
 	virtualWidth := float64(r.virtualWidth)
 	virtualHeight := float64(r.virtualHeight)
 	if virtualWidth <= 0 || virtualHeight <= 0 {
@@ -37,14 +62,14 @@ func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd, lines []string) ([]qua
 		virtualHeight = float64(r.swapchain.desc.Extent.Height)
 	}
 
-	for _, cmd := range cmds {
-		switch drawCmd := cmd.(type) {
+	for _, item := range sorted {
+		switch drawCmd := item.cmd.(type) {
 		case render.FillRect:
 			first := uint32(len(vertices))
 			vertices = appendQuad(vertices, drawCmd.Rect, geom.Rect{W: 1, H: 1}, quadColor(drawCmd.Color), virtualWidth, virtualHeight, false, false, 1, 1)
 			batches = appendOrMergeBatch(batches, r.whiteTexture, first, 6)
 		case render.SpriteCmd:
-			texture := r.texturesByID[drawCmd.Texture]
+			texture := item.texture
 			if texture == nil {
 				continue
 			}
@@ -53,6 +78,10 @@ func (r *Renderer2D) buildDrawData(cmds []render.DrawCmd, lines []string) ([]qua
 			batches = appendOrMergeBatch(batches, texture, first, 6)
 		}
 	}
+
+	// Render text commands on top of scene content.
+	vertices, batches = r.appendTextCommands(vertices, batches, textCmds, virtualWidth, virtualHeight)
+
 	vertices, batches = r.appendDebugOverlay(vertices, batches, lines, virtualWidth, virtualHeight)
 	return vertices, batches
 }
@@ -111,6 +140,44 @@ func appendQuad(vertices []quadVertex, dst geom.Rect, src geom.Rect, color [4]fl
 		bottomLeft,
 		bottomRight,
 	)
+}
+
+func (r *Renderer2D) appendTextCommands(vertices []quadVertex, batches []drawBatch, textCmds []render.TextCmd, virtualWidth, virtualHeight float64) ([]quadVertex, []drawBatch) {
+	if r == nil || r.debugFont == nil || r.debugFont.texture == nil || len(textCmds) == 0 {
+		return vertices, batches
+	}
+
+	for _, tc := range textCmds {
+		scale := tc.Scale
+		if scale <= 0 {
+			scale = 1
+		}
+		glyphW := float64(r.debugFont.glyphWidth) * scale
+		glyphH := float64(r.debugFont.glyphHeight) * scale
+		color := quadColor(tc.Color)
+		cursorX := tc.Pos.X
+		cursorY := tc.Pos.Y
+
+		for _, ch := range tc.Text {
+			if ch == ' ' {
+				cursorX += glyphW
+				continue
+			}
+			glyphRune := normalizeOverlayRune(ch)
+			src, ok := r.debugFont.glyphs[glyphRune]
+			if !ok {
+				cursorX += glyphW
+				continue
+			}
+			dst := geom.Rect{X: cursorX, Y: cursorY, W: glyphW, H: glyphH}
+			first := uint32(len(vertices))
+			vertices = appendQuad(vertices, dst, src, color, virtualWidth, virtualHeight, false, false, r.debugFont.texture.width, r.debugFont.texture.height)
+			batches = appendOrMergeBatch(batches, r.debugFont.texture, first, 6)
+			cursorX += glyphW
+		}
+	}
+
+	return vertices, batches
 }
 
 func (r *Renderer2D) appendDebugOverlay(vertices []quadVertex, batches []drawBatch, lines []string, virtualWidth, virtualHeight float64) ([]quadVertex, []drawBatch) {

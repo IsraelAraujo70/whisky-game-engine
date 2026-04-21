@@ -2,16 +2,13 @@ package game
 
 import (
 	"fmt"
-	"image/png"
 	"math/rand"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/IsraelAraujo70/whisky-game-engine/audio"
 	"github.com/IsraelAraujo70/whisky-game-engine/gameplay"
 	"github.com/IsraelAraujo70/whisky-game-engine/geom"
+	"github.com/IsraelAraujo70/whisky-game-engine/input"
 	"github.com/IsraelAraujo70/whisky-game-engine/physics"
 	"github.com/IsraelAraujo70/whisky-game-engine/render"
 	"github.com/IsraelAraujo70/whisky-game-engine/scene"
@@ -66,11 +63,41 @@ type pixelQuest struct {
 	jumpsLeft      int       // remaining jumps (reset to 2 on landing)
 
 	// Audio sound effects. Nil when audio engine is not available.
-	// To use your own sounds, place .wav or .ogg files in the assets/
-	// directory and load them in Load() with:
-	//   snd, err := audio.LoadSound(filepath.Join(assetsDir, "jump.wav"), 48000)
 	jumpSound   *audio.Sound
 	attackSound *audio.Sound
+
+	// Game state machine.
+	state         gameState
+	stateStack    []gameState
+	config        GameConfig
+	quitRequested bool
+
+	// Screens (lazily created in Load).
+	titleScreen      *screenTitle
+	pauseScreen      *screenPause
+	optionsScreen    *screenOptions
+	controlsScreen   *screenControls
+	gameOverScreen   *screenGameOver
+	victoryScreen    *screenVictory
+	levelSelectScreen *screenLevelSelect
+	saveSlotsScreen  *screenSaveSlots
+
+	// Subsystems.
+	particles   *particleSystem
+	dropManager *dropManager
+	score       *scoreState
+
+	// Extended enemy state.
+	enemyStates map[string]*enemyState
+	projectiles []*projectile
+
+	// Progression.
+	currentLevel int
+	saveData     *saveData
+
+	// ctx holds the current frame's whisky.Context so button closures can
+	// safely access it without storing stale references on screen structs.
+	ctx *whisky.Context
 }
 
 func Run() error {
@@ -82,21 +109,70 @@ func Run() error {
 		TargetFPS:     60,
 		GravityY:      400.0, // px/s² downward
 		StartScene:    scene.New("pixel-quest"),
-		// KeyMap maps physical keys to semantic control names.
-		// Space and Up arrow both trigger jump.
-		KeyMap: whisky.KeyMap{
-			"a": "move_left", "left": "move_left",
-			"d": "move_right", "right": "move_right",
-			"lshift": "sprint",
-			"space":  "jump", "up": "jump", "w": "jump",
-			"j": "attack", "k": "attack",
-		},
+		AssetsRoot:    "assets",
+		HotReload:     true,
+		// KeyMap is set dynamically from GameConfig in Load().
 	})
 }
 
 func (g *pixelQuest) Load(ctx *whisky.Context) error {
+	// --- Config ---
+	cfg, err := loadGameConfig()
+	if err != nil {
+		cfg = defaultGameConfig()
+	}
+	g.config = cfg
+	applyKeyMap(ctx, g.config.KeyMap)
+	applyDisplayConfig(ctx, g.config)
+
+	// --- Save data ---
+	sd, err := loadSaveData()
+	if err != nil {
+		sd = newSaveData()
+	}
+	g.saveData = sd
+
+	// --- Subsystems ---
+	g.particles = newParticleSystem()
+	g.dropManager = newDropManager()
+	g.score = newScoreState()
+	g.enemyStates = make(map[string]*enemyState)
+
+	// --- State machine screens ---
+	g.titleScreen = newScreenTitle(g)
+	g.pauseScreen = newScreenPause(g)
+	g.optionsScreen = newScreenOptions(g)
+	g.controlsScreen = newScreenControls(g)
+	g.gameOverScreen = newScreenGameOver(g)
+	g.victoryScreen = newScreenVictory(g)
+	g.changeState(stateTitle)
+
+	g.initLevel(ctx)
+
+	// --- Audio ---
+	g.jumpSound = audio.NewSoundFromSamples(
+		audio.GenerateSineWave(523.25, 0.08, 48000), // C5 note, 80ms
+		48000,
+	)
+	g.attackSound = audio.NewSoundFromSamples(
+		audio.GenerateSineWave(220.0, 0.06, 48000), // A3 note, 60ms
+		48000,
+	)
+
+	ctx.Logf("pixel-quest booted with tilemap (%dx%d tiles)", g.tileMap.Width, g.tileMap.Height)
+	return nil
+}
+
+func (g *pixelQuest) initLevel(ctx *whisky.Context) {
 	g.world = physics.NewWorld()
 	g.rng = rand.New(rand.NewSource(7))
+	g.enemies = nil
+	g.playerDefeated = false
+	g.triggerReached = false
+	g.velocity = geom.Vec2{}
+	g.grounded = false
+	g.jumpsLeft = 2
+	g.attackTimer = 0
 
 	// --- Tilemap setup ---
 	ts := tilemap.NewTileSet("quest", 16, 16, 4)
@@ -107,25 +183,17 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 		Tags:    map[string]string{"type": "door"},
 	})
 
-	// 20x12 tiles = 320x192 pixels (covers 320x180 virtual resolution).
 	m := tilemap.New(ts, 20, 12)
 	m.AddLayer("terrain")
-
-	// Ground floor.
 	m.FillRow("terrain", 0, 11, 20, 1)
-	// Platforms.
-	m.BuildPlatform("terrain", 3, 8, 5, 2)  // one-way platform
-	m.BuildPlatform("terrain", 12, 6, 4, 1) // solid platform
-	// Walls.
-	m.FillCol("terrain", 0, 0, 11, 1)  // left wall
-	m.FillCol("terrain", 19, 0, 11, 1) // right wall
-	// Door trigger.
+	m.BuildPlatform("terrain", 3, 8, 5, 2)
+	m.BuildPlatform("terrain", 12, 6, 4, 1)
+	m.FillCol("terrain", 0, 0, 11, 1)
+	m.FillCol("terrain", 19, 0, 11, 1)
 	m.SetTile("terrain", 18, 10, 3)
-
 	g.tileMap = m
-	if err := g.loadSprites(ctx); err != nil {
-		return err
-	}
+
+	_ = g.loadSprites(ctx)
 
 	// Attach tilemap to scene via component.
 	levelNode := scene.NewNode("level")
@@ -151,6 +219,7 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 	g.player.AddComponent(g.playerHealth)
 	ctx.Scene.Root.AddChild(g.player)
 
+	// --- Enemies ---
 	g.spawnEnemy(ctx.Scene.Root, "enemy:slime:1", 88, 164, 80, 136, 2, 22, []gameplay.DropEntry{
 		{Kind: "xp", MinAmount: 1, MaxAmount: 2, Chance: 1},
 		{Kind: "health", MinAmount: 1, MaxAmount: 1, Chance: 0.35},
@@ -159,34 +228,120 @@ func (g *pixelQuest) Load(ctx *whisky.Context) error {
 		{Kind: "xp", MinAmount: 2, MaxAmount: 4, Chance: 1},
 		{Kind: "item", ID: "slime_gel", MinAmount: 1, MaxAmount: 1, Chance: 0.5},
 	})
+}
 
-	// --- Input bindings ---
-	ctx.Input.Bind("move_left", "move_left")
-	ctx.Input.Bind("move_right", "move_right")
-	ctx.Input.Bind("sprint", "sprint")
-	ctx.Input.Bind("jump", "jump")
-	ctx.Input.Bind("attack", "attack")
+func (g *pixelQuest) restartLevel() {
+	g.score.Reset()
+	g.loadLevel(nil, g.currentLevel)
+	g.changeState(statePlaying)
+}
 
-	// --- Audio ---
-	// Generate procedural sound effects (short beeps). In a real game you
-	// would load .wav or .ogg files from the assets/ directory instead:
-	//   g.jumpSound, _ = audio.LoadSound(filepath.Join(assetsDir, "jump.wav"), 48000)
-	//   g.attackSound, _ = audio.LoadSound(filepath.Join(assetsDir, "attack.ogg"), 48000)
-	g.jumpSound = audio.NewSoundFromSamples(
-		audio.GenerateSineWave(523.25, 0.08, 48000), // C5 note, 80ms
-		48000,
-	)
-	g.attackSound = audio.NewSoundFromSamples(
-		audio.GenerateSineWave(220.0, 0.06, 48000), // A3 note, 60ms
-		48000,
-	)
+func (g *pixelQuest) changeState(newState gameState) {
+	g.stateStack = append(g.stateStack, g.state)
+	g.state = newState
+	// Reset menu cooldowns when entering a menu.
+	switch newState {
+	case stateTitle:
+		if g.titleScreen != nil {
+			g.titleScreen.menu.ConfirmDelay = 0.15
+		}
+	case statePaused:
+		if g.pauseScreen != nil {
+			g.pauseScreen.menu.ConfirmDelay = 0.15
+		}
+	case stateOptions:
+		if g.optionsScreen != nil {
+			g.optionsScreen.menu.ConfirmDelay = 0.15
+		}
+	case stateControls:
+		if g.controlsScreen != nil {
+			g.controlsScreen.menu.ConfirmDelay = 0.15
+		}
+	case stateGameOver:
+		if g.gameOverScreen != nil {
+			g.gameOverScreen.menu.ConfirmDelay = 0.15
+		}
+	case stateVictory:
+		if g.victoryScreen != nil {
+			g.victoryScreen.menu.ConfirmDelay = 0.15
+		}
+	}
+}
 
-	ctx.Logf("pixel-quest booted with tilemap (%dx%d tiles)", m.Width, m.Height)
-	return nil
+func (g *pixelQuest) popState() {
+	if len(g.stateStack) > 0 {
+		g.state = g.stateStack[len(g.stateStack)-1]
+		g.stateStack = g.stateStack[:len(g.stateStack)-1]
+	}
 }
 
 func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
+	g.ctx = ctx
+	if g.quitRequested {
+		ctx.Quit()
+		return nil
+	}
+
+	switch g.state {
+	case stateTitle:
+		g.titleScreen.Update(g, ctx, dt)
+		g.titleScreen.Draw(g, ctx)
+		ctx.SetDebugText("Pixel Quest v0.2", "Arrow keys / WASD to navigate, Enter to confirm, Mouse click OK")
+	case statePlaying:
+		return g.updatePlaying(ctx, dt)
+	case statePaused:
+		g.pauseScreen.Update(g, ctx, dt)
+		g.renderWorld(ctx)
+		g.pauseScreen.Draw(g, ctx)
+		ctx.SetDebugText("PAUSED", "Esc to resume")
+	case stateOptions:
+		g.optionsScreen.Update(g, ctx, dt)
+		g.optionsScreen.Draw(g, ctx)
+		ctx.SetDebugText("OPTIONS")
+	case stateControls:
+		g.controlsScreen.Update(g, ctx, dt)
+		g.controlsScreen.Draw(g, ctx)
+		if g.controlsScreen.awaitingAction != "" {
+			ctx.SetDebugText("Press any key to bind to "+g.controlsScreen.awaitingAction, "Esc to cancel")
+		} else {
+			ctx.SetDebugText("CONTROLS", "Select an action and press a key to rebind")
+		}
+	case stateGameOver:
+		g.gameOverScreen.Update(g, ctx, dt)
+		g.renderWorld(ctx)
+		g.gameOverScreen.Draw(g, ctx)
+		ctx.SetDebugText("GAME OVER", formatScoreLine(g.score))
+	case stateVictory:
+		g.victoryScreen.Update(g, ctx, dt)
+		g.renderWorld(ctx)
+		g.victoryScreen.Draw(g, ctx)
+		ctx.SetDebugText("VICTORY!", formatScoreLine(g.score))
+	case stateLevelSelect:
+		g.levelSelectScreen.Update(g, ctx, dt)
+		g.levelSelectScreen.Draw(g, ctx)
+		ctx.SetDebugText("LEVEL SELECT")
+	case stateSaveSlots:
+		g.saveSlotsScreen.Update(g, ctx, dt)
+		g.saveSlotsScreen.Draw(g, ctx)
+		ctx.SetDebugText("SAVE SLOTS")
+	}
+	// Update particles even in menus for visual flair.
+	if g.particles != nil {
+		g.particles.Update(dt)
+		g.particles.Draw(ctx)
+	}
+	return nil
+}
+
+func (g *pixelQuest) updatePlaying(ctx *whisky.Context, dt float64) error {
 	playerAlive := g.playerHealth == nil || g.playerHealth.Alive()
+
+	// Pause toggle.
+	if ctx.Input.JustPressed("menu_back") {
+		g.changeState(statePaused)
+		return nil
+	}
+
 	if g.attackTimer > 0 {
 		g.attackTimer -= dt
 		if g.attackTimer < 0 {
@@ -195,6 +350,7 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	}
 
 	// Reset grounded each frame — resolveY sets it back to true on landing.
+	wasGrounded := g.grounded
 	g.grounded = false
 
 	// --- Horizontal movement ---
@@ -221,39 +377,51 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	prevBottom := g.player.Position.Y + playerH
 
 	// --- Move Y and resolve ---
-	// resolveY sets g.grounded=true if landing on something this frame.
 	dy := g.velocity.Y * dt
 	g.player.Position.Y += dy
 	g.resolveY(dy, prevBottom)
+
+	// Landing particles.
+	if !wasGrounded && g.grounded && playerAlive {
+		g.particles.emitLand(g.player.Position.X, g.player.Position.Y, g.rng)
+	}
 
 	// Reset jumpsLeft when landing.
 	if g.grounded {
 		g.jumpsLeft = 2
 	}
 
-	// --- Jump (checked after resolveY so g.grounded is accurate) ---
+	// --- Jump ---
 	if playerAlive && g.jumpsLeft > 0 && ctx.Input.JustPressed("jump") {
 		g.velocity.Y = jumpVel
 		g.jumpsLeft--
+		g.particles.emitJump(g.player.Position.X, g.player.Position.Y, g.rng)
 		if eng := ctx.Audio(); eng != nil && g.jumpSound != nil {
-			eng.Play(g.jumpSound, audio.PlayOpts{Volume: 0.6})
+			eng.Play(g.jumpSound, audio.PlayOpts{Volume: g.config.Volume})
 		}
 	}
 
-	if playerAlive && ctx.Input.JustPressed("attack") {
+	// Attack with keyboard or mouse left click.
+	if playerAlive && (ctx.Input.JustPressed("attack") || ctx.Input.Mouse().JustPressed(input.MouseButtonLeft)) {
 		g.attackTimer = playerAttackDuration
 		if eng := ctx.Audio(); eng != nil && g.attackSound != nil {
-			eng.Play(g.attackSound, audio.PlayOpts{Volume: 0.8})
+			eng.Play(g.attackSound, audio.PlayOpts{Volume: g.config.Volume})
 		}
 	}
 
+	// --- Update enemies (AI + projectiles) ---
+	g.updateEnemies(ctx, dt, g.particles, g.dropManager, g.score)
+
+	// --- Damage resolution ---
 	for _, event := range gameplay.ResolveDamage(g.damageSources(), g.damageTargets()) {
 		switch event.TargetID {
 		case "player":
 			ctx.Logf("player took %d damage (%d/%d hp)", event.Amount, g.playerHealth.Current, g.playerHealth.Max)
+			g.particles.emitPlayerHit(g.player.Position.X+playerW/2, g.player.Position.Y+playerH/2, g.rng)
 			if !g.playerHealth.Alive() && !g.playerDefeated {
 				g.playerDefeated = true
 				ctx.Logf("player defeated on frame %d", ctx.Frames)
+				g.changeState(stateGameOver)
 			}
 		default:
 			enemy := g.enemyByID(event.TargetID)
@@ -266,69 +434,58 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 				if enemy.target != nil {
 					enemy.target.Disabled = true
 				}
+				g.score.AddKill()
+				g.particles.emitEnemyDeath(enemy.node.Position.X, enemy.node.Position.Y, g.rng)
 				if drops := enemy.drops.Roll(g.rng); len(drops) > 0 {
 					ctx.Logf("%s dropped %s", enemy.id, formatDrops(drops))
+					g.dropManager.Spawn(enemy.node.Position.X+enemyW/2, enemy.node.Position.Y, drops, g.rng)
 				}
 				ctx.Logf("%s defeated", enemy.id)
+			} else {
+				g.particles.emitAttackHit(enemy.node.Position.X+enemyW/2, enemy.node.Position.Y+enemyH/2, g.rng)
 			}
 		}
 	}
 
-	// --- Trigger detection ---
+	// --- Projectile hits ---
+	g.checkProjectileHits(g.score, g.particles, g.dropManager)
+
+	// --- Drops update ---
 	pp := g.player.WorldPosition()
+	g.dropManager.Update(dt, pp, playerW, playerH, g.score, g.playerHealth, g.particles, g.rng)
+
+	// --- Particles update ---
+	g.particles.Update(dt)
+
+	// --- Trigger / victory detection ---
 	playerRect := geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}
 	triggers := g.world.QueryRect(playerRect, physics.LayerTrigger)
 	if len(triggers) > 0 && !g.triggerReached {
 		g.triggerReached = true
 		ctx.Logf("player reached trigger %s on frame %d", triggers[0].ID, ctx.Frames)
+		// Unlock next level.
+		if g.currentLevel+1 < len(allLevels) {
+			g.saveData.UnlockedLevels[g.currentLevel+1] = true
+		}
+		_ = saveSaveData(g.saveData)
+		g.changeState(stateVictory)
 	}
 
-	// Fallback rendering path when sprite loading is unavailable.
-	if g.tileSheet == nil {
-		visible := tilemap.VisibleTiles(g.tileMap, ctx.ViewportRect(), geom.Vec2{})
-		tw, th := g.tileMap.TileSize()
-		for _, t := range visible {
-			ctx.DrawRect(geom.Rect{
-				X: t.WorldPos.X,
-				Y: t.WorldPos.Y,
-				W: float64(tw),
-				H: float64(th),
-			}, tileColor(t.ID))
-		}
-	}
-	if g.playerSheet == nil {
-		color := geom.RGBA(0.2, 0.8, 0.3, 1)
-		if !playerAlive {
-			color = geom.RGBA(0.5, 0.1, 0.1, 1)
-		} else if g.playerHealth != nil && g.playerHealth.Invulnerable() {
-			color = geom.RGBA(0.9, 0.9, 0.3, 1)
-		}
-		ctx.DrawRect(geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}, color)
-	}
-	if g.playerSprite != nil {
-		g.playerSprite.FlipH = g.playerFacing < 0
-	}
-	for _, enemy := range g.enemies {
-		if enemy.health == nil || !enemy.health.Alive() {
-			continue
-		}
-		pos := enemy.node.WorldPosition()
-		color := geom.RGBA(0.9, 0.3, 0.25, 1)
-		if enemy.target != nil && enemy.target.Chasing {
-			color = geom.RGBA(1, 0.1, 0.1, 1)
-		}
-		if enemy.health.Invulnerable() {
-			color = geom.RGBA(1, 0.7, 0.55, 1)
-		}
-		ctx.DrawRect(geom.Rect{X: pos.X, Y: pos.Y, W: enemyW, H: enemyH}, color)
-		g.drawHealthBar(ctx, pos.X, pos.Y-4, enemyW, enemy.health)
-	}
+	// --- Render world ---
+	g.renderWorld(ctx)
+	g.dropManager.Draw(ctx)
+	g.drawProjectiles(ctx)
+	g.particles.Draw(ctx)
+
+	// --- HUD ---
+	vw, _ := ctx.VirtualSize()
 	if g.playerHealth != nil {
-		g.drawHealthBar(ctx, pp.X, pp.Y-5, playerW, g.playerHealth)
+		g.drawHealthBar(ctx, 4, 4, 40, g.playerHealth)
 	}
-	if g.attackTimer > 0 && playerAlive {
-		ctx.DrawRect(g.playerAttackBox().Rect(), geom.RGBA(1.0, 0.85, 0.2, 0.55))
-	}
+	// Score line background.
+	scoreText := formatScoreLine(g.score)
+	ctx.DrawRect(geom.Rect{X: 2, Y: 2, W: 44, H: 6}, geom.RGBA(0.1, 0.1, 0.12, 0.7))
+	ctx.DrawRect(geom.Rect{X: vw - 90, Y: 2, W: 88, H: 6}, geom.RGBA(0.1, 0.1, 0.12, 0.7))
 
 	// --- Debug overlay ---
 	status := "airborne"
@@ -345,11 +502,46 @@ func (g *pixelQuest) Update(ctx *whisky.Context, dt float64) error {
 	}
 
 	ctx.SetDebugText(
-		"A/D move   Space/W/Up jump   J/K attack   LShift sprint",
-		fmt.Sprintf("player=(%.0f,%.0f) vel=(%.0f,%.0f)", pp.X, pp.Y, g.velocity.X, g.velocity.Y),
-		fmt.Sprintf("hp=%d/%d  enemies=%d  chasing=%d  grounded=%v  state=%s", g.playerHealth.Current, g.playerHealth.Max, g.aliveEnemies(), g.chasingEnemies(), g.grounded, status),
+		"A/D move   Space/W/Up jump   J/K/LMB attack   LShift sprint   Esc=menu",
+		fmt.Sprintf("player=(%.0f,%.0f) vel=(%.0f,%.0f)  %s", pp.X, pp.Y, g.velocity.X, g.velocity.Y, status),
+		fmt.Sprintf("%s  hp=%d/%d  enemies=%d  parts=%d", scoreText, g.playerHealth.Current, g.playerHealth.Max, g.aliveEnemies(), g.particles.Count()),
 	)
 	return nil
+}
+
+func (g *pixelQuest) renderWorld(ctx *whisky.Context) {
+	// Fallback rendering path when sprite loading is unavailable.
+	if g.tileSheet == nil {
+		visible := tilemap.VisibleTiles(g.tileMap, ctx.ViewportRect(), geom.Vec2{})
+		tw, th := g.tileMap.TileSize()
+		for _, t := range visible {
+			ctx.DrawRect(geom.Rect{
+				X: t.WorldPos.X,
+				Y: t.WorldPos.Y,
+				W: float64(tw),
+				H: float64(th),
+			}, tileColor(t.ID))
+		}
+	}
+	pp := g.player.WorldPosition()
+	if g.playerSheet == nil {
+		color := geom.RGBA(0.2, 0.8, 0.3, 1)
+		if g.playerDefeated {
+			color = geom.RGBA(0.5, 0.1, 0.1, 1)
+		} else if g.playerHealth != nil && g.playerHealth.Invulnerable() {
+			color = geom.RGBA(0.9, 0.9, 0.3, 1)
+		}
+		ctx.DrawRect(geom.Rect{X: pp.X, Y: pp.Y, W: playerW, H: playerH}, color)
+	}
+	if g.playerSprite != nil {
+		g.playerSprite.FlipH = g.playerFacing < 0
+	}
+	for _, enemy := range g.enemies {
+		g.drawEnemyByType(ctx, enemy)
+	}
+	if g.attackTimer > 0 && (g.playerHealth == nil || g.playerHealth.Alive()) {
+		ctx.DrawRect(g.playerAttackBox().Rect(), geom.RGBA(1.0, 0.85, 0.2, 0.55))
+	}
 }
 
 // resolveX pushes the player out of solid colliders on the X axis.
@@ -597,28 +789,17 @@ func tileColor(id tilemap.TileID) geom.Color {
 }
 
 func (g *pixelQuest) Shutdown(ctx *whisky.Context) error {
+	_ = saveGameConfig(g.config)
 	ctx.Logf("pixel-quest shutdown")
 	return nil
 }
 
 func (g *pixelQuest) loadSprites(ctx *whisky.Context) error {
-	assetsDir, err := pixelQuestAssetsDir()
+	tileTexture, _, _, err := ctx.LoadTexture("tiles.png")
 	if err != nil {
 		return err
 	}
-
-	tilesPath := filepath.Join(assetsDir, "tiles.png")
-	playerPath := filepath.Join(assetsDir, "player.png")
-
-	tileTexture, _, _, err := ctx.LoadTexture(tilesPath)
-	if err != nil {
-		return err
-	}
-	playerTexture, _, _, err := ctx.LoadTexture(playerPath)
-	if err != nil {
-		return err
-	}
-	playerWpx, playerHpx, err := pngSize(playerPath)
+	playerTexture, playerWpx, playerHpx, err := ctx.LoadTexture("player.png")
 	if err != nil {
 		return err
 	}
@@ -639,26 +820,4 @@ func (g *pixelQuest) loadSprites(ctx *whisky.Context) error {
 	}
 
 	return nil
-}
-
-func pixelQuestAssetsDir() (string, error) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", os.ErrNotExist
-	}
-	return filepath.Join(filepath.Dir(filename), "..", "assets"), nil
-}
-
-func pngSize(path string) (int, int, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer file.Close()
-
-	cfg, err := png.DecodeConfig(file)
-	if err != nil {
-		return 0, 0, err
-	}
-	return cfg.Width, cfg.Height, nil
 }

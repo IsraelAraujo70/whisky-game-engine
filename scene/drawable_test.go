@@ -18,6 +18,9 @@ func (d *drawContextStub) DrawRect(worldRect geom.Rect, color geom.Color) {
 func (d *drawContextStub) DrawSprite(texture render.TextureID, src, dst geom.Rect, flipH, flipV bool) {
 }
 
+func (d *drawContextStub) DrawText(text string, worldPos geom.Vec2, color geom.Color, scale float64) {
+}
+
 func (d *drawContextStub) VirtualSize() (w, h float64) {
 	return 320, 180
 }

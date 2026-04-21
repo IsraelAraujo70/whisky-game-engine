@@ -83,6 +83,7 @@ func loadDefaultAPI() (*vulkanAPI, error) {
 		tryRegisterLibFunc(handle, "vkCreateDescriptorPool", &api.createDescriptorPool)
 		tryRegisterLibFunc(handle, "vkDestroyDescriptorPool", &api.destroyDescriptorPool)
 		tryRegisterLibFunc(handle, "vkAllocateDescriptorSets", &api.allocateDescriptorSets)
+		tryRegisterLibFunc(handle, "vkFreeDescriptorSets", &api.freeDescriptorSets)
 		tryRegisterLibFunc(handle, "vkUpdateDescriptorSets", &api.updateDescriptorSets)
 		tryRegisterLibFunc(handle, "vkCreateSampler", &api.createSampler)
 		tryRegisterLibFunc(handle, "vkDestroySampler", &api.destroySampler)

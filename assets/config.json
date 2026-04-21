@@ -1,0 +1,44 @@
+{
+  "key_map": {
+    "attack": [
+      "j",
+      "k"
+    ],
+    "jump": [
+      "space",
+      "up",
+      "w"
+    ],
+    "menu_back": [
+      "escape"
+    ],
+    "menu_confirm": [
+      "enter",
+      "space"
+    ],
+    "menu_down": [
+      "down",
+      "s"
+    ],
+    "menu_up": [
+      "up",
+      "w"
+    ],
+    "move_left": [
+      "a",
+      "left"
+    ],
+    "move_right": [
+      "d",
+      "right"
+    ],
+    "sprint": [
+      "lshift"
+    ]
+  },
+  "volume": 0.8,
+  "difficulty": 1,
+  "window_width": 1920,
+  "window_height": 1080,
+  "window_mode": 1
+}
